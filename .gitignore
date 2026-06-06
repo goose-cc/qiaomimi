@@ -1,7 +1,11 @@
-test/
-train/
-val/
-__pycache__/
 venv/
-data/*.npz
+__pycache__/
+*.pyc
+
 model/*.pth
+
+picture/training_results/*
+!picture/training_results/.gitkeep
+picture/sample_*.png
+picture/*prediction*.png
+picture/run_info.txt
