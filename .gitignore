@@ -3,3 +3,5 @@ train/
 val/
 __pycache__/
 venv/
+data/*.npz
+model/*.pth
