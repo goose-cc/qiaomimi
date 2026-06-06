@@ -1,4 +1,6 @@
 import torch.nn as nn
+import torch
+import torch.nn.functional as F
 from ResidualBlock import ResidualBlock
 import torch.nn.functional as F
 
@@ -60,3 +62,41 @@ class PeakInversionCNN(nn.Module):
         output = self.adaptive_pool(output)  # 确保输出长度正确
         output = F.relu(output)  # 保证输出非负
         return output
+
+
+class PhysicsInformedNetwork(nn.Module):
+    """Physics-informed neural network for峰值反演"""
+    def __init__(self, input_length=100, output_length=100, num_channels=64):
+        super(PhysicsInformedNetwork, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv1d(1, num_channels//4, 5, padding=2, padding_mode='replicate'),
+            nn.BatchNorm1d(num_channels//4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(num_channels//4, num_channels//2, 5, padding=2, padding_mode='replicate'),
+            nn.BatchNorm1d(num_channels//2),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(num_channels//2, num_channels, 5, padding=2, padding_mode='replicate'),
+            nn.BatchNorm1d(num_channels),
+            nn.ReLU(inplace=True),
+        )
+        self.residual = nn.Sequential(
+            ResidualBlock(num_channels),
+            ResidualBlock(num_channels),
+        )
+        self.decoder = nn.Sequential(
+            nn.Conv1d(num_channels, num_channels//2, 5, padding=2, padding_mode='replicate'),
+            nn.BatchNorm1d(num_channels//2),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(num_channels//2, num_channels//4, 5, padding=2, padding_mode='replicate'),
+            nn.BatchNorm1d(num_channels//4),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(num_channels//4, 1, 5, padding=2, padding_mode='replicate'),
+        )
+        self.adaptive_pool = nn.AdaptiveAvgPool1d(output_length)
+
+    def forward(self, x):
+        features = self.encoder(x)
+        features = self.residual(features)
+        output = self.decoder(features)
+        output = self.adaptive_pool(output)
+        return F.relu(output)

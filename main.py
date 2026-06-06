@@ -9,8 +9,8 @@ import torch
 def parse_args():
 
     parser = argparse.ArgumentParser(description="峰值反演模型训练与评估")
-    parser.add_argument('--model_type', type=str, default='cnn', choices=['cnn', 'unet'],
-                        help='选择模型类型: cnn 或 unet')
+    parser.add_argument('--model_type', type=str, default='cnn', choices=['cnn', 'unet', 'pinn'],
+                        help='选择模型类型: cnn, unet 或 pinn')
     parser.add_argument('--load_model', action='store_true',
                         help='是否加载预训练模型')
     parser.add_argument('--index', type=int, default=0,
@@ -27,15 +27,15 @@ def main():
     index = args.index
     
     # 创建数据集
-    train_dataset = PeakInversionDataset(config.train_path)
-    val_dataset = PeakInversionDataset(config.val_path)
-    test_dataset = PeakInversionDataset(config.test_path)
+    train_dataset = PeakInversionDataset(config.train_dir)
+    val_dataset = PeakInversionDataset(config.val_dir)
+    test_dataset = PeakInversionDataset(config.test_dir)
     
-    # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
-    predict_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
+    # 创建数据加载器 - Windows 上必须使用 num_workers=0
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=False)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0, pin_memory=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0, pin_memory=False)
+    predict_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=False)
     
     print(f'Train samples: {len(train_dataset)}')
     print(f'Val samples: {len(val_dataset)}')
@@ -48,6 +48,11 @@ def main():
     if not load_model:
         print("不加载预训练模型，开始训练...")
         modeltools.train(train_loader, val_loader, num_epochs=config.num_epochs)
+        # 训练完成后加载保存的最佳模型再做预测与评估，避免使用最后一次未必最优的权重
+        try:
+            modeltools.load_model(config.model_path)
+        except Exception:
+            pass
     
     # 可视化一些结果
     gcy_noisy, fx_true = test_dataset.__getitem__(index)

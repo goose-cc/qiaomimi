@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import torch.nn.functional as F
 
 
 class UNetLikeModel(nn.Module):
@@ -16,7 +17,7 @@ class UNetLikeModel(nn.Module):
         
         self.bottleneck = self._block(features[2], features[3])
         
-        self.upconv3 = nn.ConvTranspose1d(features[3], features[2], 2, stride=2)
+        self.upconv3 = nn.ConvTranspose1d(features[3], features[2], 2, stride=2, output_padding=1)
         self.decoder3 = self._block(features[2]*2, features[2])
         self.upconv2 = nn.ConvTranspose1d(features[2], features[1], 2, stride=2)
         self.decoder2 = self._block(features[1]*2, features[1])
