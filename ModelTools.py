@@ -1,9 +1,10 @@
+import os
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import numpy as np
-from PINet import PeakInversionCNN
-# from UNetLike import UNetLikeModel 
+from PINet import PeakInversionCNN, PhysicsInformedNetwork
+from UNetLike import UNetLikeModel
 
 class ModelTools:
     """峰值反演模型训练器"""
@@ -21,6 +22,15 @@ class ModelTools:
             # print(self.model)
         elif model_type == 'unet':
             self.model = UNetLikeModel().to(self.device)
+        elif model_type == 'pinn':
+            self.model = PhysicsInformedNetwork(
+                input_length=config.num_y_points,
+                output_length=config.num_x_points
+            ).to(self.device)
+
+        self.model_type = model_type
+        self.x = torch.linspace(0, 2, config.num_x_points)
+        self.y = torch.linspace(2.1, 10, config.num_y_points)
 
         self.load_model(config.model_path) if LoadModel else None
         
@@ -52,6 +62,22 @@ class ModelTools:
         pred_grad = torch.abs(pred[:, :, 1:] - pred[:, :, :-1])
         target_grad = torch.abs(target[:, :, 1:] - target[:, :, :-1])
         return F.mse_loss(pred_grad, target_grad)
+
+    def physics_loss(self, fx_pred, gy_noisy):
+        """物理约束损失：根据预测 f(x) 计算 g(y) 并与观测的 g(y) 比较"""
+        fx_pred = fx_pred.squeeze(1)  # [B, num_x]
+        # x 和 y 在整个训练过程中都是固定的网格
+        x = self.x.to(self.device)
+        y = self.y.to(self.device)
+        Y, X = torch.meshgrid(y, x, indexing='ij')
+        denominator = Y - X
+        sign = torch.sign(denominator)
+        sign = torch.where(sign == 0, torch.tensor(1.0, device=self.device), sign)
+        denominator = torch.where(torch.abs(denominator) < 1e-6, sign * 1e-6, denominator)
+        integrand = fx_pred.unsqueeze(1) / denominator.unsqueeze(0)
+        gy_pred = torch.trapz(integrand, x, dim=-1)
+        gy_pred = gy_pred.unsqueeze(1)
+        return self.criterion(gy_pred, gy_noisy)
     
     def train_epoch(self, train_loader):
         '''
@@ -77,7 +103,11 @@ class ModelTools:
             # 计算损失
             mse_loss = self.criterion(fx_pred, fx)          # MSE损失
             grad_loss = self.gradient_loss(fx_pred, fx)     # 梯度损失
-            loss = mse_loss + 0.1 * grad_loss               # 组合损失
+            if self.model_type == 'pinn':
+                phys_loss = self.physics_loss(fx_pred, gy_noisy)
+                loss = mse_loss + 0.1 * grad_loss + 0.05 * phys_loss
+            else:
+                loss = mse_loss + 0.1 * grad_loss               # 组合损失
             
             # 反向传播和优化
             loss.backward()

@@ -124,8 +124,9 @@ def compute_gy(x, fx, y_points):
     # 计算被积函数
     integrand = fx / denominator
     
-    # 使用梯形法进行数值积分
-    gy = np.trapz(integrand, x, axis=1)
+    # 使用梯形法进行数值积分（手动实现）
+    dx = x[1] - x[0] if len(x) > 1 else 1
+    gy = np.trapezoid(integrand, x, axis=1)
     
     return gy
 
