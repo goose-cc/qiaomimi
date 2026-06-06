@@ -17,7 +17,7 @@ class Config:
         # 训练配置
         self.learning_rate = 1e-3
         self.weight_decay = 1e-5
-        self.num_epochs = 4
+        self.num_epochs = 50
         self.batch_size = 64
 
         self.model_path = './model/best_model.pth'  # 模型保存路径
