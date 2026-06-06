@@ -5,13 +5,17 @@ import torch
 import numpy as np
 from PINet import PeakInversionCNN, PhysicsInformedNetwork
 from UNetLike import UNetLikeModel
+from TransformerNet import PeakInversionTransformer
+from losses import InverseProblemLoss
+
 
 class ModelTools:
     """峰值反演模型训练器"""
     def __init__(self, config, model_type='cnn', LoadModel=False):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print("device is cuda")
+        print(f"device is {self.device}")
+
         
         # 选择模型
         if model_type == 'cnn':
@@ -27,6 +31,20 @@ class ModelTools:
                 input_length=config.num_y_points,
                 output_length=config.num_x_points
             ).to(self.device)
+        
+        elif model_type == 'transformer':
+             self.model = PeakInversionTransformer(
+                input_length=config.num_y_points,
+                output_length=config.num_x_points,
+                d_model=config.transformer_d_model,
+                nhead=config.transformer_nhead,
+                num_layers=config.transformer_num_layers,
+                dim_feedforward=config.transformer_dim_feedforward,
+                dropout=config.transformer_dropout,
+            ).to(self.device)
+             
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}")
 
         self.model_type = model_type
         self.x = torch.linspace(0, 2, config.num_x_points)
@@ -36,6 +54,7 @@ class ModelTools:
         
         # 损失函数：MSE + 一阶梯度约束
         self.criterion = nn.MSELoss()
+        self.inverse_loss = InverseProblemLoss(config, profile=config.loss_profile)
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             lr=config.learning_rate,
@@ -101,13 +120,9 @@ class ModelTools:
             fx_pred = self.model(gy_noisy)
             
             # 计算损失
-            mse_loss = self.criterion(fx_pred, fx)          # MSE损失
-            grad_loss = self.gradient_loss(fx_pred, fx)     # 梯度损失
-            if self.model_type == 'pinn':
-                phys_loss = self.physics_loss(fx_pred, gy_noisy)
-                loss = mse_loss + 0.1 * grad_loss + 0.05 * phys_loss
-            else:
-                loss = mse_loss + 0.1 * grad_loss               # 组合损失
+            # 使用 losses.py 中定义的多种 loss 组合：
+            # base / mse_grad / pinn / pinn_smooth / pinn_tikhonov / pinn_full
+            loss, loss_logs = self.inverse_loss(fx_pred, fx, gy_noisy)
             
             # 反向传播和优化
             loss.backward()
