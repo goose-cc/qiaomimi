@@ -5,51 +5,26 @@ import torch
 
 
 class PeakInversionDataset(Dataset):
-    """
-    峰值反演数据集。
+    """峰值反演数据集。
 
-    兼容两种数据格式：
+    兼容两种格式：
+    1. 旧格式：文件夹中包含 sample_00000.npz 等多个文件
+    2. 新格式：单个 npz 文件，例如 ./data/train.npz，内部包含 fx / gy 等数组
 
-    1. 新格式：单个 npz 文件
-       例如：
-       ./data/train.npz
-       ./data/val.npz
-       ./data/test.npz
-       ./data_exp2/train.npz
-       ./data_exp2/val.npz
-       ./data_exp2/test.npz
-
-       npz 内部应包含：
-       fx
-       gy 或 gy_clean 或 gy_noisy
-       可选：x, y
-
-    2. 旧格式：文件夹中包含多个 sample_xxx.npz 文件
-
-    输入：g(y)
-    输出：f(x)
-
-    注意：
-    - 默认不对每条 gy 做逐样本标准化，因为 g(y) 的幅值信息对反演 f(x) 有意义。
-    - 如果需要旧版逐样本标准化，可在创建 Dataset 时传 normalize_gy=True。
+    重要说明：
+    - normalize_gy 默认 False，不再对每条 gy 做逐样本标准化，避免丢失幅值信息。
+    - 如果确实需要旧版逐样本标准化，可在创建 Dataset 时传 normalize_gy=True。
     """
 
     def __init__(self, data_path, max_samples=None, normalize_gy=False):
         self.data_path = data_path
         self.max_samples = max_samples
         self.normalize_gy = normalize_gy
-
         self.mode = None
         self.gy_key = None
-
         self.x_all = None
         self.y_all = None
-        self.gy_all = None
-        self.fx_all = None
 
-        # =========================
-        # 情况 1：单个 npz 文件
-        # =========================
         if os.path.isfile(data_path):
             self.mode = "single_npz"
             self.data = np.load(data_path, allow_pickle=True)
@@ -57,11 +32,18 @@ class PeakInversionDataset(Dataset):
             print(f"Loaded npz file: {data_path}")
             print(f"Keys in npz: {self.data.files}")
 
-            self.gy_key = self._choose_gy_key(self.data.files)
+            if "gy_noisy" in self.data.files:
+                self.gy_key = "gy_noisy"
+            elif "gy" in self.data.files:
+                self.gy_key = "gy"
+            else:
+                raise KeyError(
+                    f"npz文件里找不到 gy_noisy 或 gy，当前字段有: {self.data.files}"
+                )
 
             if "fx" not in self.data.files:
                 raise KeyError(
-                    f"npz 文件里找不到 fx，当前字段有: {self.data.files}"
+                    f"npz文件里找不到 fx，当前字段有: {self.data.files}"
                 )
 
             self.gy_all = self.data[self.gy_key].astype(np.float32)
@@ -70,18 +52,11 @@ class PeakInversionDataset(Dataset):
             # 如果是单条数据 [L]，扩展成 [1, L]
             if self.gy_all.ndim == 1:
                 self.gy_all = self.gy_all[None, :]
-
             if self.fx_all.ndim == 1:
                 self.fx_all = self.fx_all[None, :]
 
-            if len(self.gy_all) != len(self.fx_all):
-                raise ValueError(
-                    f"gy 和 fx 样本数量不一致: gy={len(self.gy_all)}, fx={len(self.fx_all)}"
-                )
-
             print("raw gy shape:", self.gy_all.shape)
             print("raw fx shape:", self.fx_all.shape)
-            print("selected gy key:", self.gy_key)
 
             if max_samples is not None:
                 self.gy_all = self.gy_all[:max_samples]
@@ -94,19 +69,12 @@ class PeakInversionDataset(Dataset):
 
             if "x" in self.data.files:
                 self.x_all = self.data["x"].astype(np.float32)
-
             if "y" in self.data.files:
                 self.y_all = self.data["y"].astype(np.float32)
 
-        # =========================
-        # 情况 2：文件夹，里面有多个 npz 文件
-        # =========================
         elif os.path.isdir(data_path):
             self.mode = "folder"
-            self.files = [
-                f for f in os.listdir(data_path)
-                if f.endswith(".npz")
-            ]
+            self.files = [f for f in os.listdir(data_path) if f.endswith(".npz")]
             self.files.sort()
 
             if max_samples is not None:
@@ -118,37 +86,13 @@ class PeakInversionDataset(Dataset):
         else:
             raise FileNotFoundError(f"数据路径不存在: {data_path}")
 
-    def _choose_gy_key(self, keys):
-        """
-        选择输入 g(y) 对应的字段。
-
-        优先级：
-        1. gy_noisy：用于 noisy 实验
-        2. gy_clean：如果数据里明确保存了纯净 gy
-        3. gy：普通 clean 数据或默认 gy
-        """
-        if "gy_noisy" in keys:
-            return "gy_noisy"
-
-        if "gy_clean" in keys:
-            return "gy_clean"
-
-        if "gy" in keys:
-            return "gy"
-
-        raise KeyError(
-            f"数据文件里找不到 gy_noisy、gy_clean 或 gy，当前字段有: {keys}"
-        )
-
     def __len__(self):
         if self.mode == "single_npz":
             return len(self.gy_all)
-
         return len(self.files)
 
     def _normalize_gy(self, gy):
-        """
-        是否对单条 gy 做逐样本标准化。
+        """是否对单条 gy 做逐样本标准化。
 
         默认不标准化，因为反问题中 gy 的幅值信息对恢复 fx 很重要。
         """
@@ -160,37 +104,32 @@ class PeakInversionDataset(Dataset):
         return (gy - gy.mean()) / (gy.std() + 1e-8)
 
     def _load_one_from_folder(self, idx):
-        """
-        从旧格式文件夹中读取单个样本。
-        """
-        file_path = os.path.join(self.data_path, self.files[idx])
-        data = np.load(file_path, allow_pickle=True)
+        data = np.load(os.path.join(self.data_path, self.files[idx]), allow_pickle=True)
 
-        gy_key = self._choose_gy_key(data.files)
+        if "gy_noisy" in data.files:
+            gy_key = "gy_noisy"
+        elif "gy" in data.files:
+            gy_key = "gy"
+        else:
+            raise KeyError(
+                f"样本文件里找不到 gy_noisy 或 gy，当前字段有: {data.files}"
+            )
 
         if "fx" not in data.files:
-            raise KeyError(
-                f"样本文件里找不到 fx，当前字段有: {data.files}"
-            )
+            raise KeyError(f"样本文件里找不到 fx，当前字段有: {data.files}")
 
         gy = data[gy_key].astype(np.float32)
         fx = data["fx"].astype(np.float32)
-
         return data, gy_key, gy, fx
 
     def __getitem__(self, idx):
-        """
-        返回一条训练样本：
-
-        gy: 输入 g(y)，shape 为 [1, num_y_points]
-        fx: 标签 f(x)，shape 为 [1, num_x_points]
-        """
         if self.mode == "single_npz":
             gy = self.gy_all[idx]
             fx = self.fx_all[idx]
         else:
             _, _, gy, fx = self._load_one_from_folder(idx)
 
+        # 默认不做逐样本标准化；是否标准化由 normalize_gy 控制
         gy = self._normalize_gy(gy)
         fx = fx.astype(np.float32)
 
@@ -200,70 +139,33 @@ class PeakInversionDataset(Dataset):
         # 保证形状是 [1, num_points]
         if gy.ndim == 1:
             gy = gy.unsqueeze(0)
-
         if fx.ndim == 1:
             fx = fx.unsqueeze(0)
 
         return gy, fx
 
-    def __getx__(self, idx=0):
-        """
-        返回 x 网格。
-        如果数据中没有 x，则默认生成 [0, 2] 区间。
-        """
+    def __getx__(self, idx):
         if self.mode == "single_npz":
             if self.x_all is None:
-                return np.linspace(
-                    0,
-                    2,
-                    self.fx_all.shape[-1]
-                ).astype(np.float32)
-
+                return np.linspace(0, 2, self.fx_all.shape[-1]).astype(np.float32)
             if self.x_all.ndim == 1:
                 return self.x_all
-
             return self.x_all[idx]
 
         data, _, _, fx = self._load_one_from_folder(idx)
-
         if "x" in data.files:
             return data["x"].astype(np.float32)
+        return np.linspace(0, 2, fx.shape[-1]).astype(np.float32)
 
-        return np.linspace(
-            0,
-            2,
-            fx.shape[-1]
-        ).astype(np.float32)
-
-    def __gety__(self, idx=0):
-        """
-        返回 y 网格。
-        如果数据中没有 y，则默认生成 [3, 8] 区间。
-        """
+    def __gety__(self, idx):
         if self.mode == "single_npz":
             if self.y_all is None:
-                return np.linspace(
-                    3,
-                    8,
-                    self.gy_all.shape[-1]
-                ).astype(np.float32)
-
+                return np.linspace(3, 8, self.gy_all.shape[-1]).astype(np.float32)
             if self.y_all.ndim == 1:
                 return self.y_all
-
             return self.y_all[idx]
 
-        data, _, gy, _ = self._load_one_from_folder(idx)
-
+        data, gy_key, gy, _ = self._load_one_from_folder(idx)
         if "y" in data.files:
             return data["y"].astype(np.float32)
-
-        return np.linspace(
-            3,
-            8,
-            gy.shape[-1]
-        ).astype(np.float32)
-
-
-# 兼容旧代码可能使用的名字
-PIDataset = PeakInversionDataset
+        return np.linspace(3, 8, gy.shape[-1]).astype(np.float32)

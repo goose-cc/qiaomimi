@@ -1,0 +1,69 @@
+修改后文件说明
+================
+
+请把压缩包里的这些文件复制到项目根目录，覆盖同名文件：
+
+- config.py
+- PIDataset.py
+- losses.py
+- ModelTools.py
+- main.py
+- TransformerInverse.py
+- PINet.py
+- UNetLike.py
+- ResidualBlock.py
+- run.bat
+
+主要修改
+--------
+1. losses.py 已真正接入 ModelTools.py，可以用 loss_profile 切换不同 loss 组合。
+2. physics loss 的积分区间改为 x=[0,2], y=[3,8]，和 generate_dataset_100k.py 一致。
+3. Transformer 的位置编码区间也改为 x=[0,2], y=[3,8]。
+4. PIDataset.py 不再写死只取 2000 条，而是通过 config.py 控制：
+   max_train_samples / max_val_samples / max_test_samples。
+5. Transformer / CNN / UNet 输出端不再强制 ReLU，因为新数据的 f(x) 可能为负。
+6. main.py 使用 config.batch_size，不再写死 batch_size=32。
+7. 不同 loss_profile 会保存成不同模型文件，例如 best_transformer_pinn_smooth_model.pth，避免互相覆盖。
+
+推荐运行方式
+------------
+普通 MSE baseline:
+    run.bat transformer train base 20
+
+MSE + 梯度 loss:
+    run.bat transformer train mse_grad 20
+
+PINN:
+    run.bat transformer train pinn 20
+
+PINN + 平滑项:
+    run.bat transformer train pinn_smooth 20
+
+Huber + 梯度 + PINN:
+    run.bat transformer train pinn_huber 20
+
+如果只想用旧格式，也可以：
+    run.bat transformer train 20
+这会使用 config.py 里的 loss_profile。
+
+调试 / 正式训练
+---------------
+config.py 里现在默认：
+    max_train_samples = 2000
+    max_val_samples = 500
+    max_test_samples = 500
+
+这是为了在 CPU 或调试时跑得快。
+如果装好了 CUDA 版 PyTorch，想用完整数据，把它们改成：
+    max_train_samples = None
+    max_val_samples = None
+    max_test_samples = None
+
+建议实验表
+----------
+记录每组的 Prediction Loss MSE、Test Loss MSE、图像现象：
+1. base
+2. mse_grad
+3. pinn
+4. pinn_smooth
+5. pinn_huber
