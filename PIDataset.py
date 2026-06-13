@@ -1,10 +1,11 @@
 from torch.utils.data import Dataset
 import numpy as np
 import torch
+import os
 
 
 class PeakInversionDataset(Dataset):
-    """
+    """os
     峰值反演数据集
     读取 data/train.npz、data/val.npz、data/test.npz
     输入: g(y)
@@ -31,13 +32,18 @@ class PeakInversionDataset(Dataset):
         return len(self.fx)
 
     def __getitem__(self, idx):
-        gy = self.gy[idx]
+        gy_input = self.gy[idx]
         fx = self.fx[idx]
 
-        gy = torch.tensor(gy, dtype=torch.float32).unsqueeze(0)
-        fx = torch.tensor(fx, dtype=torch.float32).unsqueeze(0)
 
-        return gy, fx
+    # 标准化输入
+        gy_input = (gy_input - gy_input.mean()) / (gy_input.std() + 1e-8)
+
+        gy_input = torch.FloatTensor(gy_input).unsqueeze(0)
+        fx = torch.FloatTensor(fx).unsqueeze(0)
+
+        return gy_input, fx
+
 
     def __getx__(self, idx=0):
         if self.x is None:

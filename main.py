@@ -17,6 +17,9 @@ def parse_args():
                     help='模型类型: cnn, unet, pinn 或 transformer')
     parser.add_argument('--load_model', action='store_true',
                         help='是否加载预训练模型')
+    parser.add_argument('--pretrain_model', type=str, default=None,
+                    help='加载已有模型作为初始权重，然后继续训练，用于实验三微调')
+
     parser.add_argument('--index', type=int, default=0,
                         help='用于预测的样本索引')
     parser.add_argument(
@@ -81,6 +84,8 @@ def save_run_info(config, args):
         f.write(f"learning_rate: {config.learning_rate}\n")
         f.write(f"weight_decay: {config.weight_decay}\n")
         f.write(f"model_path: {config.model_path}\n")
+        f.write(f"pretrain_model: {args.pretrain_model}\n")
+
         f.write(f"train_path: {getattr(config, 'train_path', getattr(config, 'train_dir', ''))}\n")
         f.write(f"val_path: {getattr(config, 'val_path', getattr(config, 'val_dir', ''))}\n")
         f.write(f"test_path: {getattr(config, 'test_path', getattr(config, 'test_dir', ''))}\n")
@@ -136,6 +141,19 @@ def main():
     # 训练模型
     modeltools = ModelTools(config, model_type=model_type, LoadModel=load_model)  # 或 'unet'
     
+    # 实验三：加载实验一训练好的模型，然后继续训练
+    if args.pretrain_model is not None:
+        if load_model:
+            raise ValueError("不要同时使用 --load_model 和 --pretrain_model。实验三微调只需要 --pretrain_model。")
+
+        if not os.path.exists(args.pretrain_model):
+            raise FileNotFoundError(f"找不到预训练模型: {args.pretrain_model}")
+
+        print(f"加载预训练模型作为初始权重: {args.pretrain_model}")
+        modeltools.load_model(args.pretrain_model)
+        print("预训练模型加载完成，开始后续微调训练。")
+
+
     # 如果需要训练，取消注释下面的行
     if not load_model:
         print("不加载预训练模型，开始训练...")
