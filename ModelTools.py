@@ -53,9 +53,10 @@ class ModelTools:
             raise ValueError(f'未知网络结构: {model_type}')
 
         os.makedirs(getattr(config, 'model_dir', './model'), exist_ok=True)
+        exp_name = getattr(config, "exp", "exp")
         self.model_path = os.path.join(
-            getattr(config, 'model_dir', './model'),
-            f'best_{self.model_type}_{self.loss_profile}_model.pth'
+            getattr(config, "model_dir", "./model"),
+            f"{exp_name}_{self.model_type}_{self.loss_profile}.pth"
         )
 
         if LoadModel:
