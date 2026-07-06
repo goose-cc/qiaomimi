@@ -2,16 +2,19 @@
 
 class Config:
     def __init__(self):
-        # =====================
+                # =====================
         # 实验选择
         # exp1：三模型纯净数据训练
         # exp2：Model1 noisy 单独训练
         # exp3：加载 exp1 模型后，在 Model1 noisy 上微调
+        # exp4：Model3 固定 m/Gamma 训练，换 m/Gamma 做 OOD 测试
+        # exp5：Model3 扩大 a1/a2/m/Gamma 训练范围
         #
         # 队友运行命令仍然是：
         # python main.py --model_type cnn --index 20
         # =====================
-        self.exp = "exp1"  # 想跑实验2就改成 "exp2"，想跑实验3就改成 "exp3"
+        self.exp = "exp1"  # 推荐通过 main.py 的 --exp 选择实验
+
 
         if self.exp == "exp1":
             self.train_path = "./data/train.npz"
@@ -34,8 +37,23 @@ class Config:
             self.model_path = "./model/exp3_finetune_model1_noisy.pth"
             self.pretrain_model_path = "./model/exp1_clean_three_models.pth"
 
+        elif self.exp == "exp4":
+            self.train_path = "./data_exp4/train.npz"
+            self.val_path = "./data_exp4/val.npz"
+            self.test_path = "./data_exp4/test_m1p0_gamma0p5.npz"
+            self.model_path = "./model/exp4_model3_fixed_ood.pth"
+            self.pretrain_model_path = None
+
+        elif self.exp == "exp5":
+            self.train_path = "./data_exp5/train.npz"
+            self.val_path = "./data_exp5/val.npz"
+            self.test_path = "./data_exp5/test.npz"
+            self.model_path = "./model/exp5_model3_param_sweep.pth"
+            self.pretrain_model_path = None
+
         else:
             raise ValueError(f"未知实验类型: {self.exp}")
+
 
         # 兼容 main.py / 原代码中使用 train_dir / val_dir / test_dir 的写法
         self.train_dir = self.train_path
@@ -68,12 +86,58 @@ class Config:
         self.output_root = "./toy_clean_data"
         self.figure_root = "./toy_clean_figures"
 
-        # Model 3 固定参数
+                # Model 3 固定参数（旧脚本继续使用）
         self.model3_m = 0.8
         self.model3_gamma = 0.5
 
-        # a1, a2 波动水平
+        # =====================
+        # Model 3 新实验配置
+        # =====================
+
+        # a1/a2 是样本真值参数，不再把它们称为参数噪声
+        self.model3_truth_a1 = 1.0
+        self.model3_truth_a2 = 1.0
+
+        # exp4：训练只使用论文中的 m/Gamma；测试改变位置和宽度
+        self.model3_train_m = 0.8
+        self.model3_train_gamma = 0.5
+
+        self.model3_test_m = 1.0
+        self.model3_test_gamma_1 = 0.5
+        self.model3_test_gamma_2 = 0.3
+
+        # 只对积分后的 g(y) 加 1% 加性高斯白噪声
+        self.model3_white_noise_level = 0.01
+
+        # exp4 数据量
+        self.model3_fixed_train_pairs = 10000
+        self.model3_fixed_val_pairs = 1000
+        self.model3_fixed_test_pairs = 10000
+
+        # a1/a2 网格和 exp5 的 one-at-a-time 参数范围
+        self.model3_a1_min = 0.7
+        self.model3_a1_max = 1.3
+
+        self.model3_a2_min = 0.7
+        self.model3_a2_max = 1.3
+
+        self.model3_m_min = 0.1
+        self.model3_m_max = 2.0
+
+        self.model3_gamma_min = 0.1
+        self.model3_gamma_max = 1.0
+
+        self.model3_param_step = 0.01
+
+        # exp5 至少需要 20 万训练对
+        # 若 0.01 步长不足，生成器自动缩小步长
+        self.model3_sweep_train_pairs = 200000
+        self.model3_sweep_val_pairs = 20000
+        self.model3_sweep_test_pairs = 20000
+
+        # a1, a2 波动水平（旧脚本继续使用）
         self.error_levels = [0.30, 0.10, 0.01]
+
 
         # =====================
         # 数据读取配置

@@ -14,20 +14,30 @@ def load_npz(path):
     if "fx" not in keys:
         raise KeyError(f"'fx' not found in {path}, available keys: {keys}")
 
-    if "gy" in keys:
-        gy_key = "gy"
-    elif "gy_noisy" in keys:
-        gy_key = "gy_noisy"
-    else:
-        raise KeyError(f"'gy' or 'gy_noisy' not found in {path}, available keys: {keys}")
-
     fx = data["fx"]
-    gy = data[gy_key]
+
+    gy_clean = data["gy_clean"] if "gy_clean" in keys else None
+    gy_noisy = data["gy_noisy"] if "gy_noisy" in keys else None
+    gy = data["gy"] if "gy" in keys else None
+
+    if gy is None and gy_clean is None and gy_noisy is None:
+        raise KeyError(
+            f"'gy', 'gy_clean', and 'gy_noisy' are all missing in {path}, available keys: {keys}"
+        )
 
     x = data["x"] if "x" in keys else np.linspace(0, 2, fx.shape[-1])
-    y = data["y"] if "y" in keys else np.linspace(2.1, 10, gy.shape[-1])
 
-    return x, y, fx, gy, gy_key
+    if gy is not None:
+        y_len = gy.shape[-1]
+    elif gy_clean is not None:
+        y_len = gy_clean.shape[-1]
+    else:
+        y_len = gy_noisy.shape[-1]
+
+    y = data["y"] if "y" in keys else np.linspace(2.1, 10, y_len)
+
+    return x, y, fx, gy, gy_clean, gy_noisy
+
 
 
 def plot_one(x, values, index, title, xlabel, ylabel, save_path):
@@ -47,13 +57,13 @@ def plot_one(x, values, index, title, xlabel, ylabel, save_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize constructed dataset before and after integral.")
+    parser = argparse.ArgumentParser(description="Visualize dataset pairs.")
     parser.add_argument("--data", type=str, default="data/train.npz", help="Path to dataset npz file.")
     parser.add_argument("--index", type=int, default=0, help="Sample index to visualize.")
     parser.add_argument("--out_dir", type=str, default="picture", help="Output directory.")
     args = parser.parse_args()
 
-    x, y, fx, gy, gy_key = load_npz(args.data)
+    x, y, fx, gy, gy_clean, gy_noisy = load_npz(args.data)
 
     if args.index < 0 or args.index >= len(fx):
         raise IndexError(f"index {args.index} out of range, dataset size = {len(fx)}")
@@ -68,16 +78,35 @@ def main():
         save_path=os.path.join(args.out_dir, f"sample_{args.index}_before_integral_fx.png"),
     )
 
-    plot_one(
-        x=y,
-        values=gy,
-        index=args.index,
-        title=f"After Integral: g(y), sample {args.index}",
-        xlabel="y",
-        ylabel=gy_key,
-        save_path=os.path.join(args.out_dir, f"sample_{args.index}_after_integral_gy.png"),
-    )
+    if gy is not None:
+        plot_one(
+            x=y,
+            values=gy,
+            index=args.index,
+            title=f"After Integral: g(y), sample {args.index}",
+            xlabel="y",
+            ylabel="gy",
+            save_path=os.path.join(args.out_dir, f"sample_{args.index}_after_integral_gy.png"),
+        )
 
+    if gy_clean is not None:
+        plot_one(
+            x=y,
+            values=gy_clean,
+            index=args.index,
+            title=f"After Integral (Clean): g_clean(y), sample {args.index}",
+            xlabel="y",
+            ylabel="gy_clean",
+            save_path=os.path.join(args.out_dir, f"sample_{args.index}_after_integral_gy_clean.png"),
+        )
 
-if __name__ == "__main__":
-    main()
+    if gy_noisy is not None:
+        plot_one(
+            x=y,
+            values=gy_noisy,
+            index=args.index,
+            title=f"After Integral (Noisy): g_noisy(y), sample {args.index}",
+            xlabel="y",
+            ylabel="gy_noisy",
+            save_path=os.path.join(args.out_dir, f"sample_{args.index}_after_integral_gy_noisy.png"),
+        )
