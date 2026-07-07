@@ -33,6 +33,12 @@ class Config:
             self.test_path = "./data_exp2/test.npz"
             self.model_path = "./model/exp3_finetune_model1_noisy.pth"
             self.pretrain_model_path = "./model/exp1_clean_three_models.pth"
+        elif self.exp == "exp4":
+            self.train_path = "./data_exp3/train.npz"
+            self.val_path = "./data_exp3/val.npz"
+            self.test_path = "./data_exp3/test.npz"
+            self.model_path = "./model/exp4_model3_noisy.pth"
+            self.pretrain_model_path = None
 
         else:
             raise ValueError(f"未知实验类型: {self.exp}")

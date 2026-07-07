@@ -21,7 +21,7 @@ LOSS_PROFILES = [
 ]
 
 
-EXP_CHOICES = ["exp1", "exp2", "exp3"]
+EXP_CHOICES = ["exp1", "exp2", "exp3", "exp4"]
 
 
 def parse_args():
@@ -39,7 +39,7 @@ def parse_args():
             "选择实验数据: "
             "exp1=三模型 clean 数据; "
             "exp2=Model1 noisy 单独训练; "
-            "exp3=加载 exp1 模型后在 Model1 noisy 上微调。"
+            "exp3=加载 exp1 模型后在 Model1 noisy 上微调; exp4=Model3 noisy 单独训练。"
             "不传则使用 config.py 里的 config.exp。"
         ),
     )
@@ -212,6 +212,13 @@ def apply_exp_config(config, exp):
         config.val_path = "./data_exp2/val.npz"
         config.test_path = "./data_exp2/test.npz"
         # 这里先设为 None，等 model_type/loss_profile 确定后再自动推导。
+        config.pretrain_model_path = None
+
+    elif exp == "exp4":
+        # Model3 noisy 单独训练数据
+        config.train_path = "./data_exp3/train.npz"
+        config.val_path = "./data_exp3/val.npz"
+        config.test_path = "./data_exp3/test.npz"
         config.pretrain_model_path = None
 
     else:
