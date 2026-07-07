@@ -156,7 +156,7 @@ class Config:
         # 调试用样本数
         # CPU 或调试时建议小样本；正式实验可改成 None
         # =====================
-        self.max_train_samples = 5000
+        self.max_train_samples = 10000
         self.max_val_samples =800
         self.max_test_samples = 800   
 
