@@ -21,7 +21,7 @@ LOSS_PROFILES = [
 ]
 
 
-EXP_CHOICES = ["exp1", "exp2", "exp3", "exp4"]
+EXP_CHOICES = ["exp1", "exp2", "exp3", "exp4", "exp5"]
 
 
 def parse_args():
@@ -39,9 +39,13 @@ def parse_args():
             "选择实验数据: "
             "exp1=三模型 clean 数据; "
             "exp2=Model1 noisy 单独训练; "
-            "exp3=加载 exp1 模型后在 Model1 noisy 上微调; exp4=Model3 noisy 单独训练。"
+            "exp3=加载 exp1 模型后在 Model1 noisy 上微调; "
+            "exp4=Model3 固定 m/Gamma 训练并做 OOD 测试; "
+            "exp5=Model3 扩大参数范围训练。"
             "不传则使用 config.py 里的 config.exp。"
         ),
+
+
     )
 
     parser.add_argument(
@@ -51,6 +55,17 @@ def parse_args():
         choices=["cnn", "unet", "transformer"],
         help="选择网络结构: cnn, unet 或 transformer。PINN 通过 --loss_profile 选择，不作为 model_type。",
     )
+
+    parser.add_argument(
+        "--test_path",
+        type=str,
+        default=None,
+        help=(
+            "可选：只覆盖测试集路径。"
+            "用于 exp4/exp5 用同一个 checkpoint 测试不同 m/Gamma 数据。"
+        ),
+    )
+
 
     parser.add_argument(
         "--loss_profile",
@@ -215,14 +230,20 @@ def apply_exp_config(config, exp):
         config.pretrain_model_path = None
 
     elif exp == "exp4":
-        # Model3 noisy 单独训练数据
-        config.train_path = "./data_exp3/train.npz"
-        config.val_path = "./data_exp3/val.npz"
-        config.test_path = "./data_exp3/test.npz"
+        config.train_path = "./data_exp4/train.npz"
+        config.val_path = "./data_exp4/val.npz"
+        config.test_path = "./data_exp4/test_m1p0_gamma0p5.npz"
+        config.pretrain_model_path = None
+
+    elif exp == "exp5":
+        config.train_path = "./data_exp5/train.npz"
+        config.val_path = "./data_exp5/val.npz"
+        config.test_path = "./data_exp5/test.npz"
         config.pretrain_model_path = None
 
     else:
         raise ValueError(f"未知实验类型: {exp}")
+
 
     # 兼容 PIDataset / main.py 中使用 train_dir / val_dir / test_dir 的写法
     config.train_dir = config.train_path
@@ -419,7 +440,13 @@ def main():
         config.val_dir = config.val_path
         config.test_dir = config.test_path
 
+    # OOD 测试时只替换 test_path，不改变训练集、模型路径或 checkpoint。
+    if args.test_path is not None:
+        config.test_path = args.test_path
+        config.test_dir = args.test_path
+
     model_type = args.model_type
+
 
     # =====================
     # 2. loss profile 设置
@@ -483,19 +510,25 @@ def main():
     print(f"模型保存/加载路径: {config.model_path}")
     print(f"预训练模型路径: {config.pretrain_model_path}")
 
-    save_run_info(
-        config=config,
-        args=args,
-        model_path=config.model_path,
-        pretrain_model_path=config.pretrain_model_path,
-    )
-
-    # =====================
+        # =====================
     # 7. 样本数设置
     # =====================
     max_train_samples, max_val_samples, max_test_samples = resolve_sample_limits(
         config,
         args,
+    )
+
+    # 把最终实际使用的样本限制写回 config。
+    # 这样 run_info.txt 记录的是本次真正使用的值。
+    config.max_train_samples = max_train_samples
+    config.max_val_samples = max_val_samples
+    config.max_test_samples = max_test_samples
+
+    save_run_info(
+        config=config,
+        args=args,
+        model_path=config.model_path,
+        pretrain_model_path=config.pretrain_model_path,
     )
 
     print(f"max_train_samples: {max_train_samples}")

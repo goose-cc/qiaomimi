@@ -58,6 +58,16 @@ picture/sample_*.png
 picture/*prediction*.png
 picture/run_info.txt
 
+# =====================
+# Generated experiment figures
+# =====================
+picture/exp4_train/
+picture/exp4_val/
+picture/exp4_test_gamma05/
+picture/exp4_test_gamma03/
+picture/training_results/
+picture/sample_*.png
+
 
 # =========================
 # Temporary files
