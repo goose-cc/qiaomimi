@@ -4,9 +4,12 @@ from PIDataset import PeakInversionDataset
 from ModelTools import ModelTools
 from utils.visualize import visualize_prediction
 
+
 import argparse
 import os
 from datetime import datetime
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 LOSS_PROFILES = [
@@ -405,6 +408,98 @@ def save_run_info(config, args, model_path, pretrain_model_path):
 
     print(f"训练信息已保存到: {run_info_path}")
 
+def to_numpy_1d(value):
+    """
+    把 torch tensor 或 numpy array 转成一维 numpy 数组。
+    """
+    if hasattr(value, "detach"):
+        value = value.detach().cpu().numpy()
+
+    return np.asarray(value).squeeze()
+
+
+def save_prediction_visualization(
+    config,
+    args,
+    x,
+    fx_true,
+    fx_pred,
+    mse,
+):
+    """
+    把单样本预测曲线保存到当前训练结果目录。
+    这样 exp4 / exp5 的图不会混在一起，也不会被覆盖。
+    """
+
+    x_np = to_numpy_1d(x)
+    fx_true_np = to_numpy_1d(fx_true)
+    fx_pred_np = to_numpy_1d(fx_pred)
+
+    test_name = os.path.splitext(
+        os.path.basename(
+            getattr(config, "test_path", "test")
+        )
+    )[0]
+
+    exp_name = getattr(config, "exp", "exp")
+    loss_profile = getattr(config, "loss_profile", "loss")
+
+    figure_name = (
+        f"prediction_{exp_name}_"
+        f"{args.model_type}_"
+        f"{loss_profile}_"
+        f"{test_name}_"
+        f"index{args.index}.png"
+    )
+
+    figure_path = os.path.join(
+        config.result_dir,
+        figure_name,
+    )
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(
+        x_np,
+        fx_true_np,
+        label="True f(x)",
+    )
+    plt.plot(
+        x_np,
+        fx_pred_np,
+        linestyle="--",
+        label="Predicted f(x)",
+    )
+    plt.xlabel("x")
+    plt.ylabel("f(x)")
+    plt.title(
+        f"{exp_name} | {test_name} | "
+        f"index={args.index} | MSE={mse:.6f}"
+    )
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(
+        figure_path,
+        dpi=200,
+    )
+    plt.close()
+
+    data_path = figure_path.replace(
+        ".png",
+        ".npz",
+    )
+
+    np.savez_compressed(
+        data_path,
+        x=x_np,
+        fx_true=fx_true_np,
+        fx_pred=fx_pred_np,
+        mse=np.float32(mse),
+        test_path=getattr(config, "test_path", ""),
+    )
+
+    print(f"预测可视化图片已保存到: {figure_path}")
+    print(f"预测数据已保存到: {data_path}")
+
 
 def check_required_paths(config, args, pretrain_model_path=None):
     """
@@ -674,6 +769,15 @@ def main():
         fx_true.squeeze().numpy(),
         fx_pred.squeeze().detach().cpu().numpy(),
         x,
+    )
+
+    save_prediction_visualization(
+        config=config,
+        args=args,
+        x=x,
+        fx_true=fx_true,
+        fx_pred=fx_pred,
+        mse=loss,
     )
 
     # =====================

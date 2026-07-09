@@ -110,3 +110,6 @@ def main():
             ylabel="gy_noisy",
             save_path=os.path.join(args.out_dir, f"sample_{args.index}_after_integral_gy_noisy.png"),
         )
+
+if __name__ == "__main__":
+    main()
