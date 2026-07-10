@@ -1,18 +1,7 @@
 修改后文件说明
 ================
 
-请把压缩包里的这些文件复制到项目根目录，覆盖同名文件：
 
-- config.py
-- PIDataset.py
-- losses.py
-- ModelTools.py
-- main.py
-- TransformerInverse.py
-- PINet.py
-- UNetLike.py
-- ResidualBlock.py
-- run.bat
 
 主要修改
 --------

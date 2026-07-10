@@ -137,9 +137,9 @@ class Config:
 
         # exp5 至少需要 20 万训练对
         # 若 0.01 步长不足，生成器自动缩小步长
-        self.model3_sweep_train_pairs = 200000
-        self.model3_sweep_val_pairs = 20000
-        self.model3_sweep_test_pairs = 20000
+        self.model3_sweep_train_pairs = 100000
+        self.model3_sweep_val_pairs = 10000
+        self.model3_sweep_test_pairs = 10000
 
         # a1, a2 波动水平（旧脚本继续使用）
         self.error_levels = [0.30, 0.10, 0.01]
