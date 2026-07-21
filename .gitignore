@@ -8,7 +8,7 @@ __pycache__/
 
 
 # =========================
-# Virtual environment
+# Virtual environments
 # =========================
 venv/
 .venv/
@@ -31,9 +31,15 @@ Thumbs.db
 
 
 # =========================
+# Temporary files
+# =========================
+*.tmp
+*.log
+
+
+# =========================
 # Old single-sample dataset folders
-# 说明：这些是旧版“一个样本一个 .npz 文件”的目录
-# 不影响 data/train.npz、data/val.npz、data/test.npz
+# 旧版“一个样本一个 .npz 文件”的目录
 # =========================
 train/
 val/
@@ -41,7 +47,17 @@ test/
 
 
 # =========================
+# Generated datasets
+# =========================
+percent10/
+percent30/
+*.npz
+
+
+# =========================
 # Model weights / checkpoints
+# 本地保留，不上传新生成的权重
+# 注意：已经被 Git 跟踪的权重不会因 .gitignore 自动删除
 # =========================
 model/
 *.pth
@@ -52,71 +68,24 @@ model/
 # =========================
 # Generated training results
 # =========================
-picture/training_results/*
-!picture/training_results/.gitkeep
+picture/training_results/
 picture/sample_*.png
 picture/*prediction*.png
 picture/run_info.txt
 
-# =====================
+
+# =========================
 # Generated experiment figures
-# =====================
+# =========================
 picture/exp4_train/
 picture/exp4_val/
 picture/exp4_test_gamma05/
 picture/exp4_test_gamma03/
-picture/training_results/
-picture/sample_*.png
-
 figures_exp5/
-*.png
-__pycache__/
-*.pyc
 
 
 # =========================
-# Temporary files
+# Optional placeholder files
+# 如需保留空目录，可提交 .gitkeep
 # =========================
-*.tmp
-*.log
-
-# =========================
-# Model weights / checkpoints
-# 默认忽略所有位置的权重文件
-# =========================
-# 生成的数据集
-percent10/
-percent30/
-*.npz
-
-# Python 缓存
-__pycache__/
-*.pyc
-*.pyo
-
-# 虚拟环境
-venv/
-.venv/
-
-# 训练模型
-model/
-*.pth
-*.pt
-*.ckpt
-
-# 模型权重不上传
-model/
-*.pth
-*.pt
-*.ckpt
-
-# 训练结果和图片
-picture/training_results/
-
-# 编辑器配置
-.vscode/
-.idea/
-
-# 系统文件
-.DS_Store
-Thumbs.db
+!picture/training_results/.gitkeep
