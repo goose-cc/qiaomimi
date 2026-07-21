@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 
@@ -360,6 +361,7 @@ def generate_from_params(
     seed,
     source_name,
     used_step,
+    noise_level,
 ):
     x, y, kernel = build_grids_and_kernel()
 
@@ -376,12 +378,10 @@ def generate_from_params(
         fx_true @ kernel.T
     ).astype(np.float32)
 
-    # 只在积分后的 g(y) 上加 1% 白噪声
+    # 只在积分后的 g(y) 上加指定比例的高斯白噪声
     gy_noisy = add_relative_white_noise(
         gy_clean,
-        noise_level=(
-            cfg.model3_white_noise_level
-        ),
+        noise_level=noise_level,
         rng=rng,
     )
 
@@ -400,7 +400,7 @@ def generate_from_params(
         "varying_param": varying_param,
         "varying_param_names": PARAM_NAMES,
         "noise_level": np.float32(
-            cfg.model3_white_noise_level
+            noise_level
         ),
         "requested_step": np.float32(
             cfg.model3_param_step
@@ -444,63 +444,60 @@ def save_dataset(
     )
 
 
-def main():
-    output_dir = "./data_exp5"
-
-    ensure_dir(output_dir)
-
-    train_path = os.path.join(
-        output_dir,
-        "train.npz",
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "按 Exp5 的 OAT 方法生成 10% 和 30% "
+            "高斯白噪声数据集。"
+        )
     )
 
-    val_path = os.path.join(
-        output_dir,
-        "val.npz",
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        default=["percent10", "percent30"],
+        choices=["percent10", "percent30"],
+        help=(
+            "要生成的数据集。默认同时生成 "
+            "percent10 和 percent30。"
+        ),
     )
 
-    test_path = os.path.join(
-        output_dir,
-        "test.npz",
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="允许覆盖已存在的 train/val/test.npz。",
     )
 
-    assert_not_exists(
-        [
-            train_path,
-            val_path,
-            test_path,
-        ]
-    )
+    return parser.parse_args()
 
-    n_train = (
-        cfg.model3_sweep_train_pairs
-    )
 
-    n_val = (
-        cfg.model3_sweep_val_pairs
-    )
+NOISE_DATASETS = {
+    "percent10": 0.10,
+    "percent30": 0.30,
+}
 
-    n_test = (
-        cfg.model3_sweep_test_pairs
-    )
 
-    total_pairs = (
-        n_train
-        + n_val
-        + n_test
-    )
+def build_shared_parameter_split():
+    """
+    只生成一次参数划分。
+
+    percent10 和 percent30 使用完全相同的
+    train/val/test 参数真值与顺序，便于公平比较。
+    """
+    n_train = cfg.model3_sweep_train_pairs
+    n_val = cfg.model3_sweep_val_pairs
+    n_test = cfg.model3_sweep_test_pairs
+    total_pairs = n_train + n_val + n_test
 
     used_step, truth_params, truth_labels = (
-        resolve_step_for_unique_pairs(
-            total_pairs
-        )
+        resolve_step_for_unique_pairs(total_pairs)
     )
 
     rng = np.random.default_rng(
         cfg.random_seed + 10
     )
 
-    # 随机打乱所有不同参数真值
     order = rng.permutation(
         len(truth_params)
     )[:total_pairs]
@@ -508,136 +505,127 @@ def main():
     truth_params = truth_params[order]
     truth_labels = truth_labels[order]
 
-    # =====================
-    # train
-    # =====================
-    train_params = truth_params[
-        :n_train
-    ]
-
-    train_labels = truth_labels[
-        :n_train
-    ]
-
-    # =====================
-    # val
-    # =====================
     val_start = n_train
-    val_end = val_start + n_val
+    val_end = n_train + n_val
 
-    val_params = truth_params[
-        val_start:val_end
-    ]
-
-    val_labels = truth_labels[
-        val_start:val_end
-    ]
-
-    # =====================
-    # test
-    # =====================
-    test_params = truth_params[
-        val_end:val_end + n_test
-    ]
-
-    test_labels = truth_labels[
-        val_end:val_end + n_test
-    ]
+    split = {
+        "train": (
+            truth_params[:n_train],
+            truth_labels[:n_train],
+            cfg.random_seed + 20,
+        ),
+        "val": (
+            truth_params[val_start:val_end],
+            truth_labels[val_start:val_end],
+            cfg.random_seed + 21,
+        ),
+        "test": (
+            truth_params[val_end:val_end + n_test],
+            truth_labels[val_end:val_end + n_test],
+            cfg.random_seed + 22,
+        ),
+    }
 
     print(
         "用户请求初始步长: "
         f"{cfg.model3_param_step}"
     )
-
-    print(
-        "固定三变一在 0.01 步长下"
-        f"不足 {total_pairs} 组不同真值。"
-    )
-
     print(
         "自动缩小后的实际步长: "
         f"{used_step:.8f}"
     )
-
     print(
-        "可用不同真值数量: "
-        f"{len(truth_params)}"
+        "train/val/test 使用互不重复的参数真值。"
     )
-
     print(
-        "train/val/test "
-        "使用互不重复的参数真值。"
+        "percent10 与 percent30 使用相同参数划分。"
     )
 
-    train_data = generate_from_params(
-        train_params,
-        train_labels,
-        seed=cfg.random_seed + 20,
-        source_name=(
-            "model3_oat_unique_train"
-        ),
-        used_step=used_step,
-    )
+    return split, used_step
 
-    val_data = generate_from_params(
-        val_params,
-        val_labels,
-        seed=cfg.random_seed + 21,
-        source_name=(
-            "model3_oat_unique_val"
-        ),
-        used_step=used_step,
-    )
 
-    test_data = generate_from_params(
-        test_params,
-        test_labels,
-        seed=cfg.random_seed + 22,
-        source_name=(
-            "model3_oat_unique_test"
-        ),
-        used_step=used_step,
-    )
+def generate_noise_dataset(
+    dataset_name,
+    noise_level,
+    split,
+    used_step,
+    overwrite=False,
+):
+    output_dir = f"./{dataset_name}"
+    ensure_dir(output_dir)
 
-    save_dataset(
-        train_path,
-        train_data,
-    )
+    paths = {
+        name: os.path.join(
+            output_dir,
+            f"{name}.npz",
+        )
+        for name in ("train", "val", "test")
+    }
 
-    save_dataset(
-        val_path,
-        val_data,
-    )
-
-    save_dataset(
-        test_path,
-        test_data,
-    )
+    if not overwrite:
+        assert_not_exists(list(paths.values()))
 
     print()
+    print("=" * 60)
+    print(
+        f"开始生成 {dataset_name}: "
+        f"noise_level={noise_level:.0%}"
+    )
+    print("=" * 60)
+
+    for split_name in ("train", "val", "test"):
+        params, labels, seed = split[split_name]
+
+        dataset = generate_from_params(
+            params=params,
+            varying_param=labels,
+            seed=seed,
+            source_name=(
+                f"model3_oat_unique_{split_name}_"
+                f"{dataset_name}"
+            ),
+            used_step=used_step,
+            noise_level=noise_level,
+        )
+
+        save_dataset(
+            paths[split_name],
+            dataset,
+        )
 
     print(
-        "Model 3 exp5 参数范围扩展"
-        "数据生成完成。"
+        f"{dataset_name} 生成完成，"
+        f"噪声水平为 {noise_level:.0%}。"
     )
 
-    print(
-        "规则：固定 3 个参数，"
-        "只改变 1 个参数。"
+
+def main():
+    args = parse_args()
+
+    split, used_step = (
+        build_shared_parameter_split()
     )
 
-    print(
-        "每一对数据使用一个精确参数真值"
-        "和对应的 1% noisy g(y)。"
-    )
+    for dataset_name in args.datasets:
+        generate_noise_dataset(
+            dataset_name=dataset_name,
+            noise_level=NOISE_DATASETS[
+                dataset_name
+            ],
+            split=split,
+            used_step=used_step,
+            overwrite=args.overwrite,
+        )
 
+    print()
+    print("全部数据生成完成。")
     print(
-        "train/val/test "
-        "的参数真值不重复。"
+        "数据流程：参数 -> f(x) -> 积分得到 "
+        "g_clean(y) -> 加噪得到 g_noisy(y)。"
     )
-
     print(
-        "旧数据目录不会被覆盖。"
+        "运行训练时分别使用 "
+        "--exp percent10 和 --exp percent30。"
     )
 
 

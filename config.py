@@ -37,13 +37,6 @@ class Config:
             self.model_path = "./model/exp3_finetune_model1_noisy.pth"
             self.pretrain_model_path = "./model/exp1_clean_three_models.pth"
         elif self.exp == "exp4":
-            self.train_path = "./data_exp3/train.npz"
-            self.val_path = "./data_exp3/val.npz"
-            self.test_path = "./data_exp3/test.npz"
-            self.model_path = "./model/exp4_model3_noisy.pth"
-            self.pretrain_model_path = None
-
-        elif self.exp == "exp4":
             self.train_path = "./data_exp4/train.npz"
             self.val_path = "./data_exp4/val.npz"
             self.test_path = "./data_exp4/test_m1p0_gamma0p5.npz"
@@ -55,6 +48,20 @@ class Config:
             self.val_path = "./data_exp5/val.npz"
             self.test_path = "./data_exp5/test.npz"
             self.model_path = "./model/exp5_model3_param_sweep.pth"
+            self.pretrain_model_path = None
+
+        elif self.exp == "percent10":
+            self.train_path = "./percent10/train.npz"
+            self.val_path = "./percent10/val.npz"
+            self.test_path = "./percent10/test.npz"
+            self.model_path = "./model/percent10_model3_param_sweep.pth"
+            self.pretrain_model_path = None
+
+        elif self.exp == "percent30":
+            self.train_path = "./percent30/train.npz"
+            self.val_path = "./percent30/val.npz"
+            self.test_path = "./percent30/test.npz"
+            self.model_path = "./model/percent30_model3_param_sweep.pth"
             self.pretrain_model_path = None
 
         else:
@@ -112,7 +119,7 @@ class Config:
         self.model3_test_gamma_1 = 0.5
         self.model3_test_gamma_2 = 0.3
 
-        # 只对积分后的 g(y) 加 1% 加性高斯白噪声
+        # 旧数据生成脚本默认使用 1% 噪声；percent10/percent30 生成器会显式覆盖
         self.model3_white_noise_level = 0.01
 
         # exp4 数据量

@@ -68,6 +68,11 @@ picture/exp4_test_gamma03/
 picture/training_results/
 picture/sample_*.png
 
+figures_exp5/
+*.png
+__pycache__/
+*.pyc
+
 
 # =========================
 # Temporary files
@@ -79,12 +84,39 @@ picture/sample_*.png
 # Model weights / checkpoints
 # 默认忽略所有位置的权重文件
 # =========================
+# 生成的数据集
+percent10/
+percent30/
+*.npz
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境
+venv/
+.venv/
+
+# 训练模型
+model/
 *.pth
 *.pt
 *.ckpt
 
-# 只允许提交 model 目录内的权重
-!model/
-!model/**/*.pth
-!model/**/*.pt
-!model/**/*.ckpt
+# 模型权重不上传
+model/
+*.pth
+*.pt
+*.ckpt
+
+# 训练结果和图片
+picture/training_results/
+
+# 编辑器配置
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
