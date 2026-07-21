@@ -1,5 +1,76 @@
-test/
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+
+
+# =========================
+# Virtual environment
+# =========================
+venv/
+.venv/
+env/
+ENV/
+
+
+# =========================
+# IDE / editor
+# =========================
+.vscode/
+.idea/
+
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+
+# =========================
+# Old single-sample dataset folders
+# 说明：这些是旧版“一个样本一个 .npz 文件”的目录
+# 不影响 data/train.npz、data/val.npz、data/test.npz
+# =========================
 train/
 val/
-__pycache__/
-venv/
+test/
+
+
+# =========================
+# Model weights / checkpoints
+# =========================
+model/
+*.pth
+*.pt
+*.ckpt
+
+
+# =========================
+# Generated training results
+# =========================
+picture/training_results/*
+!picture/training_results/.gitkeep
+picture/sample_*.png
+picture/*prediction*.png
+picture/run_info.txt
+
+# =====================
+# Generated experiment figures
+# =====================
+picture/exp4_train/
+picture/exp4_val/
+picture/exp4_test_gamma05/
+picture/exp4_test_gamma03/
+picture/training_results/
+picture/sample_*.png
+
+
+# =========================
+# Temporary files
+# =========================
+*.tmp
+*.log

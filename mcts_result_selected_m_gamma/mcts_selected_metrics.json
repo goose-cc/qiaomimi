@@ -1,0 +1,20 @@
+{
+  "split": "train",
+  "local_index": 77999,
+  "m": 1.3000032901763916,
+  "gamma": 0.5,
+  "m_squared": 1.6900085544694434,
+  "gy_key": "gy_noisy",
+  "model_path": "./model/exp5_transformer_pinn.pth",
+  "fx_relative_mse_before": 0.4848153906702366,
+  "fx_relative_mse_after": 0.3862522041796773,
+  "gy_relative_mse_before": 0.012076231588279397,
+  "gy_relative_mse_after": 0.0019043980970906546,
+  "mcts_best_score": 0.0030640113730027647,
+  "root_prior_stats": {
+    "min": 0.2,
+    "mean": 1.4327879913500843,
+    "max": 4.0
+  },
+  "restart_steps": []
+}

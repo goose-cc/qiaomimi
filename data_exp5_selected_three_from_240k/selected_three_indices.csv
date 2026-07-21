@@ -1,0 +1,4 @@
+﻿rank,global_index,split,local_index,m,gamma,npz_path
+1,160070,train,160070,0.800000,0.100000,./data_exp5_selected_three_from_240k\selected_1_global160070_train_local160070_m0p8000_gamma0p1000.npz
+2,61010,train,61010,0.800000,1.000000,./data_exp5_selected_three_from_240k\selected_2_global61010_train_local61010_m0p8000_gamma1p0000.npz
+3,182897,train,182897,2.000000,0.500000,./data_exp5_selected_three_from_240k\selected_3_global182897_train_local182897_m2p0000_gamma0p5000.npz
