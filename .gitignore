@@ -74,3 +74,17 @@ picture/sample_*.png
 # =========================
 *.tmp
 *.log
+
+# =========================
+# Model weights / checkpoints
+# 默认忽略所有位置的权重文件
+# =========================
+*.pth
+*.pt
+*.ckpt
+
+# 只允许提交 model 目录内的权重
+!model/
+!model/**/*.pth
+!model/**/*.pt
+!model/**/*.ckpt
