@@ -24,7 +24,7 @@ LOSS_PROFILES = [
 ]
 
 
-EXP_CHOICES = ["exp1", "exp2", "exp3", "exp4", "exp5", "percent10", "percent30"]
+EXP_CHOICES = ["exp1", "exp2", "exp3", "exp4", "exp5", "two_truth10"]
 
 
 def parse_args():
@@ -45,8 +45,7 @@ def parse_args():
             "exp3=加载 exp1 模型后在 Model1 noisy 上微调; "
             "exp4=Model3 固定 m/Gamma 训练并做 OOD 测试; "
             "exp5=Model3 扩大参数范围训练; "
-            "percent10=Exp5 构造方法 + 10% 噪声; "
-            "percent30=Exp5 构造方法 + 30% 噪声。"
+            "two_truth10=两个固定真值、每个真值10000条10%白噪声。"
             "不传则使用 config.py 里的 config.exp。"
         ),
 
@@ -246,16 +245,10 @@ def apply_exp_config(config, exp):
         config.test_path = "./data_exp5/test.npz"
         config.pretrain_model_path = None
 
-    elif exp == "percent10":
-        config.train_path = "./percent10/train.npz"
-        config.val_path = "./percent10/val.npz"
-        config.test_path = "./percent10/test.npz"
-        config.pretrain_model_path = None
-
-    elif exp == "percent30":
-        config.train_path = "./percent30/train.npz"
-        config.val_path = "./percent30/val.npz"
-        config.test_path = "./percent30/test.npz"
+    elif exp == "two_truth10":
+        config.train_path = "./data_two_truth10/train.npz"
+        config.val_path = "./data_two_truth10/val.npz"
+        config.test_path = "./data_two_truth10/test.npz"
         config.pretrain_model_path = None
 
     else:

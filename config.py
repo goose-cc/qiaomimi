@@ -37,6 +37,13 @@ class Config:
             self.model_path = "./model/exp3_finetune_model1_noisy.pth"
             self.pretrain_model_path = "./model/exp1_clean_three_models.pth"
         elif self.exp == "exp4":
+            self.train_path = "./data_exp3/train.npz"
+            self.val_path = "./data_exp3/val.npz"
+            self.test_path = "./data_exp3/test.npz"
+            self.model_path = "./model/exp4_model3_noisy.pth"
+            self.pretrain_model_path = None
+
+        elif self.exp == "exp4":
             self.train_path = "./data_exp4/train.npz"
             self.val_path = "./data_exp4/val.npz"
             self.test_path = "./data_exp4/test_m1p0_gamma0p5.npz"
@@ -50,18 +57,11 @@ class Config:
             self.model_path = "./model/exp5_model3_param_sweep.pth"
             self.pretrain_model_path = None
 
-        elif self.exp == "percent10":
-            self.train_path = "./percent10/train.npz"
-            self.val_path = "./percent10/val.npz"
-            self.test_path = "./percent10/test.npz"
-            self.model_path = "./model/percent10_model3_param_sweep.pth"
-            self.pretrain_model_path = None
-
-        elif self.exp == "percent30":
-            self.train_path = "./percent30/train.npz"
-            self.val_path = "./percent30/val.npz"
-            self.test_path = "./percent30/test.npz"
-            self.model_path = "./model/percent30_model3_param_sweep.pth"
+        elif self.exp == "two_truth10":
+            self.train_path = "./data_two_truth10/train.npz"
+            self.val_path = "./data_two_truth10/val.npz"
+            self.test_path = "./data_two_truth10/test.npz"
+            self.model_path = "./model/two_truth10_transformer_base.pth"
             self.pretrain_model_path = None
 
         else:
@@ -119,7 +119,7 @@ class Config:
         self.model3_test_gamma_1 = 0.5
         self.model3_test_gamma_2 = 0.3
 
-        # 旧数据生成脚本默认使用 1% 噪声；percent10/percent30 生成器会显式覆盖
+        # 只对积分后的 g(y) 加 1% 加性高斯白噪声
         self.model3_white_noise_level = 0.01
 
         # exp4 数据量
@@ -144,9 +144,9 @@ class Config:
 
         # exp5 至少需要 20 万训练对
         # 若 0.01 步长不足，生成器自动缩小步长
-        self.model3_sweep_train_pairs = 100000
-        self.model3_sweep_val_pairs = 10000
-        self.model3_sweep_test_pairs = 10000
+        self.model3_sweep_train_pairs = 200000
+        self.model3_sweep_val_pairs = 20000
+        self.model3_sweep_test_pairs = 20000
 
         # a1, a2 波动水平（旧脚本继续使用）
         self.error_levels = [0.30, 0.10, 0.01]
