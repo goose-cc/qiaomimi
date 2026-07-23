@@ -2,13 +2,14 @@ from torch.utils.data import DataLoader
 from config import Config
 from PIDataset import PeakInversionDataset
 from ModelTools import ModelTools
-from utils.visualize import visualize_prediction
 
 
 import argparse
+import random
 import os
 from datetime import datetime
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 
 
@@ -45,6 +46,8 @@ def parse_args():
             "exp3=加载 exp1 模型后在 Model1 noisy 上微调; "
             "exp4=Model3 固定 m/Gamma 训练并做 OOD 测试; "
             "exp5=Model3 扩大参数范围训练; "
+            "percent10=Exp5 构造方法 + 10% 噪声; "
+            "percent30=Exp5 构造方法 + 30% 噪声。"
             "two_truth10=两个固定真值、每个真值10000条10%白噪声。"
             "不传则使用 config.py 里的 config.exp。"
         ),
@@ -204,7 +207,27 @@ def parse_args():
         help="DataLoader 的 num_workers。Windows 建议保持 0。",
     )
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=2026,
+        help="训练随机种子，用于公平复现实验。默认 2026。",
+    )
+
     return parser.parse_args()
+
+
+def set_global_seed(seed):
+    """设置 Python、NumPy 和 PyTorch 随机种子。"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
 def apply_exp_config(config, exp):
@@ -412,6 +435,7 @@ def save_run_info(config, args, model_path, pretrain_model_path):
         f.write(f"load_model: {args.load_model}\n")
         f.write(f"full_data: {args.full_data}\n")
         f.write(f"index: {args.index}\n")
+        f.write(f"seed: {args.seed}\n")
 
     print(f"训练信息已保存到: {run_info_path}")
 
@@ -529,6 +553,8 @@ def check_required_paths(config, args, pretrain_model_path=None):
 def main():
     config = Config()
     args = parse_args()
+    set_global_seed(args.seed)
+    print(f"训练随机种子: {args.seed}")
 
     # =====================
     # 1. 实验数据选择
@@ -772,11 +798,6 @@ def main():
     print(f"Prediction Loss MSE: {loss:.6f}")
     print(f"Predicted fx: {fx_pred}")
 
-    visualize_prediction(
-        fx_true.squeeze().numpy(),
-        fx_pred.squeeze().detach().cpu().numpy(),
-        x,
-    )
 
     save_prediction_visualization(
         config=config,
