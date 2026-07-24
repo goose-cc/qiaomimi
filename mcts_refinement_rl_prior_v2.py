@@ -20,7 +20,9 @@ Main changes:
 2. MCTSRefinement subclass:
    - adds stagnation restart: when search plateaus, re-root the tree at the current best fx;
    - adds optional polish smoothing candidates, accepted only if the objective improves;
-   - records restart steps in info["restart_steps"].
+   - records restart steps in info["restart_steps"];
+   - returns explicit metadata showing that the formal output is selected only by
+     the composite score. Ground truth is never accepted by refine().
 """
 
 import numpy as np
@@ -272,6 +274,14 @@ class MCTSRefinement(_BaseMCTSRefinement):
         verbose=True,
         return_info=False,
     ):
+        """
+        Refine ``fx_init`` and return the candidate with the minimum composite score.
+
+        This method deliberately has no ``fx_true`` argument. Therefore ground truth
+        cannot participate in tree search, early stopping, polishing, restarts, or
+        final candidate selection. Any true-spectrum MSE must be calculated by the
+        caller only after this method has returned.
+        """
         fx_init = self.project(fx_init)
 
         # Use initial model as refinement prior.
@@ -280,6 +290,7 @@ class MCTSRefinement(_BaseMCTSRefinement):
         self.fx_prior_mass = np.trapezoid(self.fx_prior, self.x)
 
         root_score = self.evaluate(fx_init)
+        initial_score = float(root_score)
 
         root = Node(
             fx=fx_init.copy(),
@@ -415,9 +426,21 @@ class MCTSRefinement(_BaseMCTSRefinement):
             history["root_num_children"].append(len(root.children))
 
         if return_info:
+            best_score_parts = {
+                key: float(value)
+                for key, value in self.score_parts(best_fx).items()
+            }
+
             info = {
-                "root_score": root_score,
-                "best_score": best_score,
+                # Formal output selection is entirely truth-free.
+                "selection_rule": "minimum_composite_score_without_fx_true",
+                "initial_score": initial_score,
+                # Kept for backward compatibility. After a restart this is the
+                # score of the current tree root, not necessarily the first root.
+                "root_score": float(root_score),
+                "best_score": float(best_score),
+                "best_score_parts": best_score_parts,
+                "iterations_completed": len(history["best_score"]),
                 "history": history,
                 "root": root,
                 "root_prior_stats": self._root_prior_stats(root),
