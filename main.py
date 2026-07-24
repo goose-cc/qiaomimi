@@ -46,8 +46,6 @@ def parse_args():
             "exp3=加载 exp1 模型后在 Model1 noisy 上微调; "
             "exp4=Model3 固定 m/Gamma 训练并做 OOD 测试; "
             "exp5=Model3 扩大参数范围训练; "
-            "percent10=Exp5 构造方法 + 10% 噪声; "
-            "percent30=Exp5 构造方法 + 30% 噪声。"
             "two_truth10=两个固定真值、每个真值10000条10%白噪声。"
             "不传则使用 config.py 里的 config.exp。"
         ),
