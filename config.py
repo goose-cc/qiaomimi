@@ -57,6 +57,13 @@ class Config:
             self.model_path = "./model/exp5_model3_param_sweep.pth"
             self.pretrain_model_path = None
 
+        elif self.exp == "two_truth10":
+            self.train_path = "./data_two_truth10/train.npz"
+            self.val_path = "./data_two_truth10/val.npz"
+            self.test_path = "./data_two_truth10/test.npz"
+            self.model_path = "./model/two_truth10_transformer_base.pth"
+            self.pretrain_model_path = None
+
         else:
             raise ValueError(f"未知实验类型: {self.exp}")
 
@@ -137,9 +144,9 @@ class Config:
 
         # exp5 至少需要 20 万训练对
         # 若 0.01 步长不足，生成器自动缩小步长
-        self.model3_sweep_train_pairs = 100000
-        self.model3_sweep_val_pairs = 10000
-        self.model3_sweep_test_pairs = 10000
+        self.model3_sweep_train_pairs = 200000
+        self.model3_sweep_val_pairs = 20000
+        self.model3_sweep_test_pairs = 20000
 
         # a1, a2 波动水平（旧脚本继续使用）
         self.error_levels = [0.30, 0.10, 0.01]
@@ -156,9 +163,9 @@ class Config:
         # 调试用样本数
         # CPU 或调试时建议小样本；正式实验可改成 None
         # =====================
-        self.max_train_samples = 10000
-        self.max_val_samples =800
-        self.max_test_samples = 800   
+        self.max_train_samples = 50000
+        self.max_val_samples =10000
+        self.max_test_samples = 10000   
 
         # 正式完整训练时可以改成：
         # self.max_train_samples = None
