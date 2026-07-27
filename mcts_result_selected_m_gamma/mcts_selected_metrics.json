@@ -6,26 +6,24 @@
   "m_squared": 1.6900085544694434,
   "gy_key": "gy_noisy",
   "model_path": "./model/exp5_transformer_pinn.pth",
-  "formal_true_mse": 0.0001754252039032697,
-  "formal_true_rmse": 0.013244818001893031,
+  "formal_true_mse": 0.00017141540921459945,
+  "formal_true_rmse": 0.013092570764162379,
   "fx_relative_mse_before": 0.002305979050777601,
-  "fx_relative_mse_after": 0.0006147674386042633,
+  "fx_relative_mse_after": 0.0006007153460016401,
   "gy_relative_mse_before": 0.0018875148570552855,
-  "gy_relative_mse_after": 9.798302901100616e-05,
-  "mcts_best_score": 0.00025882292499391016,
+  "gy_relative_mse_after": 9.528878177841208e-05,
+  "mcts_best_score": 0.0002118472073758149,
   "root_prior_stats": {
-    "min": 0.9546158953661208,
-    "mean": 1.1401019938751007,
-    "max": 1.2135973000014655
+    "min": 0.39428167902641076,
+    "mean": 1.114788234813916,
+    "max": 1.3420488735193228
   },
   "restart_steps": [
-    604,
-    1108,
-    1823,
-    2353,
-    2693,
-    3191,
-    3542,
-    3948
+    717,
+    1141,
+    2007,
+    2321,
+    2717,
+    3632
   ]
 }

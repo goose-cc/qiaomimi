@@ -31,7 +31,7 @@ GY_KEY = "gy_noisy"
 OUTPUT_DIR = "./mcts_result_selected_m_gamma"
 
 MCTS_ITERATIONS = 4000
-ROLLOUT_DEPTH = 18
+ROLLOUT_DEPTH = 12
 
 SHOW_PLOTS = True
 SEED = 0
@@ -389,12 +389,12 @@ def build_original_v2_policy():
     """
     return AdaptiveScoreGuidedPriorPolicy(
         num_candidates=48,
-        structured_fraction=0.70,
-        temperature=0.55,
-        min_prior=0.10,
+        structured_fraction=0.60,
+        temperature=0.45,
+        min_prior=0.08,
         max_prior=3.0,
-        roughness_weight=0.55,
-        prior_deviation_weight=0.45,
+        roughness_weight=0.50,
+        prior_deviation_weight=0.30,
     )
 
 
@@ -416,19 +416,19 @@ def build_original_v2_mcts(
         iterations=MCTS_ITERATIONS,
         rollout_depth=ROLLOUT_DEPTH,
 
-        lambda_tv=0.0045,
-        lambda_curv=0.0009,
-        lambda_prior=0.035,
-        lambda_mass=0.025,
+        lambda_tv=0.0038,
+        lambda_curv=0.00040,
+        lambda_prior=0.022,
+        lambda_mass=0.014,
 
-        exploration=1.35,
-        max_children=56,
-        progressive_c=3.0,
+        exploration=1.20,
+        max_children=48,
+        progressive_c=2.5,
         progressive_alpha=0.50,
 
         peak_amp_range=(
             0.00003,
-            0.008,
+            0.015,
         ),
 
         peak_width_range=(
@@ -438,15 +438,15 @@ def build_original_v2_mcts(
 
         policy_fn=policy,
         policy_prior_weight=1.0,
-        prior_floor=0.10,
+        prior_floor=0.08,
         prior_ceiling=3.0,
 
         restart_patience=300,
         min_improvement=1e-4,
 
         polish_smoothing_sigmas=(
-            0.25,
-            0.50,
+            #0.25,
+            #0.50,
             #1.00,
         ),
 
