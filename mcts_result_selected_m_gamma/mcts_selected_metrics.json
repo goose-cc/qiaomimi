@@ -5,25 +5,27 @@
   "gamma": 0.5,
   "m_squared": 1.6900085544694434,
   "gy_key": "gy_noisy",
-  "model_path": "./model/exp5_transformer_pinn.pth",
-  "formal_true_mse": 0.00017141540921459945,
-  "formal_true_rmse": 0.013092570764162379,
-  "fx_relative_mse_before": 0.002305979050777601,
-  "fx_relative_mse_after": 0.0006007153460016401,
-  "gy_relative_mse_before": 0.0018875148570552855,
-  "gy_relative_mse_after": 9.528878177841208e-05,
-  "mcts_best_score": 0.0002118472073758149,
+  "model_path": "./model/two_truth10_transformer_pinn.pth",
+  "formal_true_mse": 0.7087685461936851,
+  "formal_true_rmse": 0.8418839267937624,
+  "fx_relative_mse_before": 3.6737991221662463,
+  "fx_relative_mse_after": 2.4838382057519035,
+  "gy_relative_mse_before": 0.011846205773428967,
+  "gy_relative_mse_after": 0.0023565935360430608,
+  "mcts_best_score": 0.0042024477068939485,
   "root_prior_stats": {
-    "min": 0.39428167902641076,
-    "mean": 1.114788234813916,
-    "max": 1.3420488735193228
+    "min": 0.6328504434408264,
+    "mean": 1.1280532728609725,
+    "max": 1.3766264995010669
   },
   "restart_steps": [
-    717,
-    1141,
-    2007,
-    2321,
-    2717,
-    3632
+    318,
+    1147,
+    1811,
+    2120,
+    2604,
+    2966,
+    3393,
+    3820
   ]
 }

@@ -22,7 +22,7 @@ from mcts_refinement_rl_prior_v2 import (
 # 仍然在 pick_one_m_not_065.py 中修改。
 # ============================================================
 
-MODEL_PATH = "./model/exp5_transformer_pinn.pth"
+MODEL_PATH = "./model/two_truth10_transformer_pinn.pth"
 
 # 使用带噪声的 g(y)。
 # 使用无噪声数据时改为 "gy_clean"。
