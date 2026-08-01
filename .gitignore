@@ -91,3 +91,6 @@ figures_exp5/
 # 如需保留空目录，可提交 .gitkeep
 # =========================
 !picture/training_results/.gitkeep
+
+# Generated model checkpoints
+model/*.pth
