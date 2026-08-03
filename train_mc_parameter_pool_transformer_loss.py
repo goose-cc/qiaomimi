@@ -41,7 +41,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 5
+SCRIPT_VERSION = 6
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", required=True, help="本实验检查点目录")
     parser.add_argument(
         "--model-type",
-        choices=("transformer", "cnn", "unet"),
+        choices=("transformer", "transformer_peak", "cnn", "unet"),
         default="transformer",
         help="只允许选择原项目已有模型",
     )
@@ -100,12 +100,12 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "base", "mse_grad", "huber_grad", "pinn",
             "pinn_smooth", "pinn_tikhonov", "pinn_huber", "pinn_full",
-            "peak_grad", "peak_pinn",
+            "peak_grad", "peak_pinn", "narrow_peak", "narrow_peak_pinn",
         ),
         default="peak_grad",
         help=(
-            "组合损失类型；peak_grad=完整谱+梯度+峰加权+共振监督，"
-            "peak_pinn 在此基础上加入弱物理项"
+            "组合损失类型；narrow_peak 配合 transformer_peak，显式监督背景与非负峰分支；"
+            "narrow_peak_pinn 在此基础上加入弱物理项"
         ),
     )
     parser.add_argument(
@@ -130,24 +130,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lambda-tikhonov", type=float, default=0.0)
     parser.add_argument("--huber-beta", type=float, default=0.1)
     parser.add_argument("--loss-eps", type=float, default=1e-8)
-    parser.add_argument("--lambda-peak", type=float, default=0.5)
+    parser.add_argument("--lambda-peak", type=float, default=0.25)
     parser.add_argument("--lambda-resonance", type=float, default=0.02)
+    parser.add_argument("--lambda-background", type=float, default=0.2)
+    parser.add_argument("--lambda-peak-shape", type=float, default=1.0)
+    parser.add_argument("--lambda-peak-grad", type=float, default=0.05)
+    parser.add_argument("--lambda-peak-area", type=float, default=0.25)
+    parser.add_argument("--lambda-peak-center", type=float, default=0.05)
+    parser.add_argument("--lambda-peak-distribution", type=float, default=0.2)
+    parser.add_argument(
+        "--peak-window-min-cells", type=float, default=2.0,
+        help="峰局部监督窗口的最小半宽（输出网格数）",
+    )
+    parser.add_argument(
+        "--peak-softargmax-beta", type=float, default=20.0,
+        help="可微峰中心估计的 soft-argmax 温度",
+    )
     parser.add_argument(
         "--peak-alpha",
         type=float,
-        default=5.0,
+        default=20.0,
         help="完整谱峰区点权重的额外倍率；0 表示不做峰区加权",
     )
     parser.add_argument(
         "--min-resonance-visibility",
         type=float,
-        default=0.10,
+        default=0.03,
         help="只有真实共振 RMS/完整谱 RMS 不低于该值时才计算共振监督",
     )
     parser.add_argument(
         "--min-width-grid-cells",
         type=float,
-        default=1.0,
+        default=0.25,
         help="只有 m*gamma 至少覆盖这么多个输出网格时才计算共振监督",
     )
     peak_domain = parser.add_mutually_exclusive_group()
@@ -301,7 +315,11 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--transformer-rms-eps 必须大于 0")
     for name in (
         "lambda_grad", "lambda_physics", "lambda_peak", "lambda_resonance",
-        "peak_alpha", "min_resonance_visibility", "min_width_grid_cells",
+        "lambda_background", "lambda_peak_shape", "lambda_peak_grad",
+        "lambda_peak_area", "lambda_peak_center", "lambda_peak_distribution",
+        "peak_window_min_cells",
+        "peak_softargmax_beta", "peak_alpha", "min_resonance_visibility",
+        "min_width_grid_cells",
         "lambda_smooth", "lambda_tv", "lambda_tikhonov",
     ):
         if getattr(args, name) < 0:
@@ -316,6 +334,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--noise-curriculum-steps 不能为负数")
     if args.target_global_step < 0:
         raise ValueError("--target-global-step 不能为负数")
+    if args.loss_profile in {"narrow_peak", "narrow_peak_pinn"} and args.model_type != "transformer_peak":
+        raise ValueError("narrow_peak 系列 loss 必须搭配 --model-type transformer_peak")
+    if args.model_type == "transformer_peak" and args.output_points < 128:
+        raise ValueError("transformer_peak 为恢复窄峰，--output-points 必须至少为 128，推荐 256")
 
 
 def choose_device(name: str) -> torch.device:
@@ -363,15 +385,24 @@ def build_original_project_model(
     """
     expected_class = {
         "transformer": "InverseTransformer1D",
+        "transformer_peak": "InverseTransformerPeakResidual1D",
         "cnn": "PeakInversionCNN",
         "unet": "UNetLikeModel",
     }[args.model_type]
 
     try:
-        if args.model_type == "transformer":
-            from TransformerInverse import InverseTransformer1D
+        if args.model_type in {"transformer", "transformer_peak"}:
+            from TransformerInverse import (
+                InverseTransformer1D,
+                InverseTransformerPeakResidual1D,
+            )
 
-            model = InverseTransformer1D(
+            model_class = (
+                InverseTransformerPeakResidual1D
+                if args.model_type == "transformer_peak"
+                else InverseTransformer1D
+            )
+            model_kwargs = dict(
                 input_length=args.input_points,
                 output_length=args.output_points,
                 d_model=args.transformer_d_model,
@@ -380,7 +411,6 @@ def build_original_project_model(
                 num_decoder_layers=args.transformer_num_layers,
                 dim_feedforward=args.transformer_dim_feedforward,
                 dropout=args.transformer_dropout,
-                # 新问题中，输出坐标是 s，输入坐标是 q^2
                 x_min=args.s_min,
                 x_max=args.s_max,
                 y_min=args.q2_min,
@@ -389,6 +419,12 @@ def build_original_project_model(
                 rms_normalize_io=args.transformer_rms_normalize_io,
                 rms_eps=args.transformer_rms_eps,
             )
+            if args.model_type == "transformer_peak":
+                model_kwargs.update(
+                    data_scale=args.data_scale,
+                    shift=args.shift,
+                )
+            model = model_class(**model_kwargs)
         elif args.model_type == "cnn":
             from PINet import PeakInversionCNN
 
@@ -404,6 +440,7 @@ def build_original_project_model(
     except Exception as exc:
         required_file = {
             "transformer": "TransformerInverse.py",
+            "transformer_peak": "TransformerInverse.py",
             "cnn": "PINet.py（以及 ResidualBlock.py）",
             "unet": "UNetLike.py",
         }[args.model_type]
@@ -1053,6 +1090,14 @@ def train(args: argparse.Namespace) -> None:
         lambda_physics=args.lambda_physics,
         lambda_peak=args.lambda_peak,
         lambda_resonance=args.lambda_resonance,
+        lambda_background=args.lambda_background,
+        lambda_peak_shape=args.lambda_peak_shape,
+        lambda_peak_grad=args.lambda_peak_grad,
+        lambda_peak_area=args.lambda_peak_area,
+        lambda_peak_center=args.lambda_peak_center,
+        lambda_peak_distribution=args.lambda_peak_distribution,
+        peak_window_min_cells=args.peak_window_min_cells,
+        peak_softargmax_beta=args.peak_softargmax_beta,
         peak_alpha=args.peak_alpha,
         min_resonance_visibility=args.min_resonance_visibility,
         min_width_grid_cells=args.min_width_grid_cells,
@@ -1153,7 +1198,11 @@ def train(args: argparse.Namespace) -> None:
         "loss weights: "
         f"grad={args.lambda_grad:g}, physics={args.lambda_physics:g}, "
         f"peak={args.lambda_peak:g}, resonance={args.lambda_resonance:g}, "
-        f"peak_alpha={args.peak_alpha:g}, smooth={args.lambda_smooth:g}, "
+        f"background={args.lambda_background:g}, peak_shape={args.lambda_peak_shape:g}, "
+        f"peak_grad={args.lambda_peak_grad:g}, peak_area={args.lambda_peak_area:g}, "
+        f"peak_center={args.lambda_peak_center:g}, "
+        f"peak_dist={args.lambda_peak_distribution:g}, peak_alpha={args.peak_alpha:g}, "
+        f"smooth={args.lambda_smooth:g}, "
         f"tv={args.lambda_tv:g}, tikhonov={args.lambda_tikhonov:g}"
     )
     print(f"max_hours: {args.max_hours}")
@@ -1238,7 +1287,18 @@ def train(args: argparse.Namespace) -> None:
                     optimizer.zero_grad(set_to_none=True)
 
                     with amp_autocast(use_amp):
-                        prediction = model(g_noisy)
+                        background_prediction = None
+                        resonance_prediction = None
+                        peak_location_logits = None
+                        if args.model_type == "transformer_peak":
+                            (
+                                prediction,
+                                background_prediction,
+                                resonance_prediction,
+                                peak_location_logits,
+                            ) = model.forward_with_components(g_noisy)
+                        else:
+                            prediction = model(g_noisy)
                         prediction = normalize_prediction_shape(
                             prediction,
                             target,
@@ -1248,13 +1308,15 @@ def train(args: argparse.Namespace) -> None:
                         elif args.physics_target == "noisy":
                             g_reference = g_noisy
                         else:
-                            # 与100点 f_true 完全离散一致，适合极窄峰标签不可解析时。
                             g_reference = criterion.physics_forward_integral(target)
                         loss, loss_logs = criterion(
                             prediction,
                             target,
                             g_reference,
                             params=params_batch,
+                            background_pred=background_prediction,
+                            resonance_pred=resonance_prediction,
+                            peak_location_logits=peak_location_logits,
                         )
 
                     if not torch.isfinite(loss):
@@ -1315,6 +1377,12 @@ def train(args: argparse.Namespace) -> None:
                             f"grad={loss_logs['grad']:.3e} "
                             f"peak={loss_logs['peak_weighted']:.3e} "
                             f"res={loss_logs['resonance']:.3e} "
+                            f"bgc={loss_logs['background_component']:.3e} "
+                            f"shape={loss_logs['peak_shape_component']:.3e} "
+                            f"pgrad={loss_logs['peak_grad_component']:.3e} "
+                            f"area={loss_logs['peak_area_component']:.3e} "
+                            f"center={loss_logs['peak_center_component']:.3e} "
+                            f"dist={loss_logs['peak_distribution_component']:.3e} "
                             f"eligible={loss_logs['eligible_fraction']:.2f} "
                             f"phys={loss_logs['physics']:.3e} "
                             f"noise={train_noise:.3f} "

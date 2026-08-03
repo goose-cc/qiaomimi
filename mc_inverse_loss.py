@@ -31,6 +31,8 @@ class MonteCarloInverseLoss(nn.Module):
         "pinn_full",
         "peak_grad",
         "peak_pinn",
+        "narrow_peak",
+        "narrow_peak_pinn",
     }
 
     def __init__(
@@ -48,6 +50,14 @@ class MonteCarloInverseLoss(nn.Module):
         lambda_physics: float = 0.01,
         lambda_peak: float = 0.5,
         lambda_resonance: float = 0.02,
+        lambda_background: float = 0.2,
+        lambda_peak_shape: float = 1.0,
+        lambda_peak_grad: float = 0.05,
+        lambda_peak_area: float = 0.25,
+        lambda_peak_center: float = 0.05,
+        lambda_peak_distribution: float = 0.2,
+        peak_window_min_cells: float = 2.0,
+        peak_softargmax_beta: float = 20.0,
         peak_alpha: float = 5.0,
         min_resonance_visibility: float = 0.10,
         min_width_grid_cells: float = 1.0,
@@ -74,6 +84,14 @@ class MonteCarloInverseLoss(nn.Module):
             ("lambda_physics", lambda_physics),
             ("lambda_peak", lambda_peak),
             ("lambda_resonance", lambda_resonance),
+            ("lambda_background", lambda_background),
+            ("lambda_peak_shape", lambda_peak_shape),
+            ("lambda_peak_grad", lambda_peak_grad),
+            ("lambda_peak_area", lambda_peak_area),
+            ("lambda_peak_center", lambda_peak_center),
+            ("lambda_peak_distribution", lambda_peak_distribution),
+            ("peak_window_min_cells", peak_window_min_cells),
+            ("peak_softargmax_beta", peak_softargmax_beta),
             ("peak_alpha", peak_alpha),
             ("min_resonance_visibility", min_resonance_visibility),
             ("min_width_grid_cells", min_width_grid_cells),
@@ -87,6 +105,14 @@ class MonteCarloInverseLoss(nn.Module):
         self.lambda_physics = float(lambda_physics)
         self.lambda_peak = float(lambda_peak)
         self.lambda_resonance = float(lambda_resonance)
+        self.lambda_background = float(lambda_background)
+        self.lambda_peak_shape = float(lambda_peak_shape)
+        self.lambda_peak_grad = float(lambda_peak_grad)
+        self.lambda_peak_area = float(lambda_peak_area)
+        self.lambda_peak_center = float(lambda_peak_center)
+        self.lambda_peak_distribution = float(lambda_peak_distribution)
+        self.peak_window_min_cells = float(peak_window_min_cells)
+        self.peak_softargmax_beta = float(peak_softargmax_beta)
         self.peak_alpha = float(peak_alpha)
         self.min_resonance_visibility = float(min_resonance_visibility)
         self.min_width_grid_cells = float(min_width_grid_cells)
@@ -113,6 +139,7 @@ class MonteCarloInverseLoss(nn.Module):
         self.register_buffer("s_grid", s, persistent=False)
         self.register_buffer("q2_grid", q2, persistent=False)
         self.register_buffer("forward_matrix", forward_matrix, persistent=False)
+        self.register_buffer("trap_weights", trap_weights, persistent=False)
 
     @staticmethod
     def _check_shape(name: str, z: torch.Tensor, length: int) -> None:
@@ -233,12 +260,132 @@ class MonteCarloInverseLoss(nn.Module):
             resonance_loss = f_pred.new_zeros(())
         return peak_weighted, resonance_loss, eligible_fraction
 
+    def _narrow_component_terms(
+        self,
+        f_true: torch.Tensor,
+        params: torch.Tensor,
+        background_pred: torch.Tensor,
+        resonance_pred: torch.Tensor,
+        peak_location_logits: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        self._check_shape("background_pred", background_pred, self.forward_matrix.shape[0])
+        self._check_shape("resonance_pred", resonance_pred, self.forward_matrix.shape[0])
+        resonance_true, background_true, mass, width = self._decompose_true_curve(params)
+
+        # 背景分支使用完整谱尺度归一化，避免接近零的背景样本导致数值爆炸。
+        background_loss = self._relative_mse(
+            background_pred, background_true, scale_target=f_true
+        )
+
+        s = self.s_grid.to(device=f_true.device, dtype=f_true.dtype).view(1, 1, -1)
+        mass_view = mass.view(-1, 1, 1)
+        width_view = width.view(-1, 1, 1)
+        sigma = torch.maximum(
+            width_view,
+            f_true.new_tensor(self.peak_window_min_cells * self.ds),
+        )
+        window = torch.exp(-0.5 * ((s - mass_view) / sigma).square())
+        window_sum = torch.sum(window, dim=(1, 2)).clamp_min(self.eps)
+
+        shape_num = torch.sum(
+            window * (resonance_pred - resonance_true).square(), dim=(1, 2)
+        ) / window_sum
+        shape_den = torch.sum(
+            window * resonance_true.square(), dim=(1, 2)
+        ) / window_sum
+        shape_rel = shape_num / shape_den.clamp_min(self.eps)
+
+        pred_grad = self.first_diff(resonance_pred)
+        true_grad = self.first_diff(resonance_true)
+        grad_window = 0.5 * (window[..., 1:] + window[..., :-1])
+        grad_window_sum = torch.sum(grad_window, dim=(1, 2)).clamp_min(self.eps)
+        grad_num = torch.sum(
+            grad_window * (pred_grad - true_grad).square(), dim=(1, 2)
+        ) / grad_window_sum
+        grad_den = torch.sum(
+            grad_window * true_grad.square(), dim=(1, 2)
+        ) / grad_window_sum
+        peak_grad_rel = grad_num / grad_den.clamp_min(self.eps)
+
+        trap = self.trap_weights.to(
+            device=f_true.device, dtype=f_true.dtype
+        ).view(1, 1, -1)
+        pred_area = torch.sum(trap * resonance_pred, dim=(1, 2))
+        true_area = torch.sum(trap * resonance_true, dim=(1, 2))
+        peak_area_rel = (
+            (pred_area - true_area).square()
+            / true_area.square().clamp_min(self.eps)
+        )
+
+        peak_scale = torch.amax(resonance_pred, dim=2, keepdim=True).clamp_min(self.eps)
+        normalized_peak = resonance_pred / peak_scale
+        logits = self.peak_softargmax_beta * normalized_peak + torch.log(
+            window.clamp_min(1e-6)
+        )
+        probability = torch.softmax(logits, dim=2)
+        center_pred = torch.sum(probability * s, dim=2).squeeze(1)
+        center_scale = torch.maximum(
+            width, f_true.new_tensor(2.0 * self.ds)
+        ).clamp_min(self.eps)
+        center_rel = ((center_pred - mass) / center_scale).square()
+
+        if peak_location_logits is not None:
+            self._check_shape(
+                "peak_location_logits", peak_location_logits, self.forward_matrix.shape[0]
+            )
+            target_distribution = resonance_true.clamp_min(0.0)
+            target_distribution = target_distribution / torch.sum(
+                target_distribution, dim=2, keepdim=True
+            ).clamp_min(self.eps)
+            target_log = torch.log(target_distribution.clamp_min(self.eps))
+            pred_log = torch.log_softmax(peak_location_logits, dim=2)
+            distribution_kl = torch.sum(
+                target_distribution * (target_log - pred_log), dim=(1, 2)
+            )
+        else:
+            distribution_kl = torch.zeros_like(center_rel)
+
+        resonance_rms = torch.sqrt(
+            torch.mean(resonance_true.square(), dim=(1, 2)).clamp_min(self.eps)
+        )
+        full_rms = torch.sqrt(
+            torch.mean(f_true.square(), dim=(1, 2)).clamp_min(self.eps)
+        )
+        visibility = resonance_rms / full_rms
+        eligible = visibility >= self.min_resonance_visibility
+        eligible = eligible & ((width / self.ds) >= self.min_width_grid_cells)
+        if self.peak_in_domain_only:
+            eligible = eligible & (mass >= self.s_min) & (mass <= self.s_max)
+
+        eligible_float = eligible.to(dtype=f_true.dtype)
+        eligible_fraction = torch.mean(eligible_float)
+
+        def eligible_mean(values: torch.Tensor) -> torch.Tensor:
+            if torch.any(eligible):
+                return torch.sum(values * eligible_float) / torch.sum(
+                    eligible_float
+                ).clamp_min(1.0)
+            return f_true.new_zeros(())
+
+        return (
+            background_loss,
+            eligible_mean(shape_rel),
+            eligible_mean(torch.log1p(peak_grad_rel)),
+            eligible_mean(peak_area_rel),
+            eligible_mean(center_rel),
+            eligible_mean(distribution_kl),
+            eligible_fraction,
+        )
+
     def forward(
         self,
         f_pred: torch.Tensor,
         f_true: torch.Tensor,
         g_reference: torch.Tensor,
         params: Optional[torch.Tensor] = None,
+        background_pred: Optional[torch.Tensor] = None,
+        resonance_pred: Optional[torch.Tensor] = None,
+        peak_location_logits: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         self._check_shape("f_pred", f_pred, self.forward_matrix.shape[0])
         self._check_shape("f_true", f_true, self.forward_matrix.shape[0])
@@ -251,12 +398,14 @@ class MonteCarloInverseLoss(nn.Module):
         use_grad = self.profile in {
             "mse_grad", "huber_grad", "pinn", "pinn_smooth",
             "pinn_huber", "pinn_full", "peak_grad", "peak_pinn",
+            "narrow_peak", "narrow_peak_pinn",
         }
         use_physics = self.profile in {
             "pinn", "pinn_smooth", "pinn_tikhonov",
-            "pinn_huber", "pinn_full", "peak_pinn",
+            "pinn_huber", "pinn_full", "peak_pinn", "narrow_peak_pinn",
         }
-        use_peak = self.profile in {"peak_grad", "peak_pinn"}
+        use_peak = self.profile in {"peak_grad", "peak_pinn", "narrow_peak", "narrow_peak_pinn"}
+        use_narrow_components = self.profile in {"narrow_peak", "narrow_peak_pinn"}
         use_smooth = self.profile in {"pinn_smooth", "pinn_full"}
         use_tv = self.profile == "pinn_full"
         use_tikhonov = self.profile in {"pinn_tikhonov", "pinn_full"}
@@ -285,6 +434,29 @@ class MonteCarloInverseLoss(nn.Module):
             peak_weighted = zero
             resonance = zero
             eligible_fraction = zero
+
+        background_component = zero
+        peak_shape_component = zero
+        peak_grad_component = zero
+        peak_area_component = zero
+        peak_center_component = zero
+        peak_distribution_component = zero
+        if use_narrow_components:
+            if background_pred is None or resonance_pred is None:
+                raise ValueError(
+                    "narrow_peak loss requires explicit background_pred and resonance_pred"
+                )
+            (
+                background_component,
+                peak_shape_component,
+                peak_grad_component,
+                peak_area_component,
+                peak_center_component,
+                peak_distribution_component,
+                eligible_fraction,
+            ) = self._narrow_component_terms(
+                f_true, params, background_pred, resonance_pred, peak_location_logits
+            )
 
         if use_smooth:
             d2 = self.second_diff(f_pred)
@@ -329,6 +501,31 @@ class MonteCarloInverseLoss(nn.Module):
                 + self.lambda_resonance * resonance
                 + self.lambda_physics * physics
             )
+        elif self.profile == "narrow_peak":
+            total = (
+                data_mse
+                + self.lambda_grad * grad
+                + self.lambda_peak * peak_weighted
+                + self.lambda_background * background_component
+                + self.lambda_peak_shape * peak_shape_component
+                + self.lambda_peak_grad * peak_grad_component
+                + self.lambda_peak_area * peak_area_component
+                + self.lambda_peak_center * peak_center_component
+                + self.lambda_peak_distribution * peak_distribution_component
+            )
+        elif self.profile == "narrow_peak_pinn":
+            total = (
+                data_mse
+                + self.lambda_grad * grad
+                + self.lambda_peak * peak_weighted
+                + self.lambda_background * background_component
+                + self.lambda_peak_shape * peak_shape_component
+                + self.lambda_peak_grad * peak_grad_component
+                + self.lambda_peak_area * peak_area_component
+                + self.lambda_peak_center * peak_center_component
+                + self.lambda_peak_distribution * peak_distribution_component
+                + self.lambda_physics * physics
+            )
         else:
             raise AssertionError(self.profile)
 
@@ -340,6 +537,12 @@ class MonteCarloInverseLoss(nn.Module):
             "physics": float(physics.detach().cpu()),
             "peak_weighted": float(peak_weighted.detach().cpu()),
             "resonance": float(resonance.detach().cpu()),
+            "background_component": float(background_component.detach().cpu()),
+            "peak_shape_component": float(peak_shape_component.detach().cpu()),
+            "peak_grad_component": float(peak_grad_component.detach().cpu()),
+            "peak_area_component": float(peak_area_component.detach().cpu()),
+            "peak_center_component": float(peak_center_component.detach().cpu()),
+            "peak_distribution_component": float(peak_distribution_component.detach().cpu()),
             "eligible_fraction": float(eligible_fraction.detach().cpu()),
             "smooth": float(smooth.detach().cpu()),
             "tv": float(tv.detach().cpu()),

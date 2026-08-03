@@ -1,0 +1,17 @@
+V2.6 narrow-peak correction test report
+
+Passed:
+- Python syntax compilation for TransformerInverse.py
+- Python syntax compilation for mc_inverse_loss.py
+- Python syntax compilation for train_mc_parameter_pool_transformer_loss.py
+- Python syntax compilation for validate_mc_transformer.py
+- Python syntax compilation for generate_narrow_peak_training_pool.py
+- all legacy and new loss profiles forward/backward smoke test
+- transformer_peak construction and forward_with_components
+- narrow_peak loss component propagation and optimizer step
+- checkpoint save/resume format
+- validation loading of transformer_peak checkpoint
+- validation use of explicit resonance branch
+
+A two-step end-to-end CPU training/validation run was completed on a temporary pool.
+This verifies code flow only; it is not evidence of final reconstruction quality.

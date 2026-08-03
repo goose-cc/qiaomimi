@@ -21,6 +21,13 @@ def make_loss(profile: str) -> MonteCarloInverseLoss:
         lambda_physics=0.01,
         lambda_peak=0.5,
         lambda_resonance=0.1,
+        lambda_background=0.2,
+        lambda_peak_shape=1.0,
+        lambda_peak_grad=0.05,
+        lambda_peak_area=0.25,
+        lambda_peak_center=0.05,
+        peak_window_min_cells=2.0,
+        peak_softargmax_beta=20.0,
         peak_alpha=5.0,
         min_resonance_visibility=0.05,
         min_width_grid_cells=0.5,
@@ -47,6 +54,21 @@ def curves_from_params(params: torch.Tensor) -> torch.Tensor:
     return 160000.0 * rho / (s + 400.0).square()
 
 
+def components_from_params(params: torch.Tensor):
+    s = torch.linspace(0.1764, 6.0, 100).view(1, 1, -1)
+    a1 = params[:, 0].view(-1, 1, 1)
+    a2 = params[:, 1].view(-1, 1, 1)
+    a3 = params[:, 2].view(-1, 1, 1)
+    m = params[:, 3].view(-1, 1, 1)
+    gamma = params[:, 4].view(-1, 1, 1)
+    width = m * gamma
+    resonance = 160000.0 * (a1 / math.pi) * width / (
+        ((s - m).square() + width.square()) * (s + 400.0).square()
+    )
+    background = 160000.0 * (a2 * s + a3) / (s + 400.0).square()
+    return background, resonance
+
+
 def main() -> None:
     torch.manual_seed(20260802)
     params = torch.tensor(
@@ -63,12 +85,21 @@ def main() -> None:
         dtype=torch.float32,
     )
     f_true = curves_from_params(params)
+    background_true, resonance_true = components_from_params(params)
     reference_loss = make_loss("peak_pinn")
     g_clean = reference_loss.physics_forward_integral(f_true)
 
     for profile in sorted(MonteCarloInverseLoss.VALID_PROFILES):
         loss_fn = make_loss(profile)
-        perfect, perfect_logs = loss_fn(f_true.clone(), f_true, g_clean, params=params)
+        extra = {}
+        if profile in {"narrow_peak", "narrow_peak_pinn"}:
+            extra = {
+                "background_pred": background_true.clone(),
+                "resonance_pred": resonance_true.clone(),
+            }
+        perfect, perfect_logs = loss_fn(
+            f_true.clone(), f_true, g_clean, params=params, **extra
+        )
         for key in ("data_mse", "grad", "physics", "peak_weighted", "resonance"):
             if perfect_logs[key] > 1e-8:
                 raise RuntimeError(
@@ -79,7 +110,20 @@ def main() -> None:
             raise RuntimeError("%s: non-finite perfect loss" % profile)
 
         prediction = (f_true + 0.02 * torch.randn_like(f_true)).requires_grad_(True)
-        loss, logs = loss_fn(prediction, f_true, g_clean, params=params)
+        if profile in {"narrow_peak", "narrow_peak_pinn"}:
+            background_prediction = (
+                background_true + 0.01 * torch.randn_like(background_true)
+            ).requires_grad_(True)
+            resonance_prediction = (
+                resonance_true + 0.01 * torch.randn_like(resonance_true)
+            ).clamp_min(0.0).requires_grad_(True)
+            loss, logs = loss_fn(
+                prediction, f_true, g_clean, params=params,
+                background_pred=background_prediction,
+                resonance_pred=resonance_prediction,
+            )
+        else:
+            loss, logs = loss_fn(prediction, f_true, g_clean, params=params)
         if not torch.isfinite(loss):
             raise RuntimeError("%s: non-finite loss" % profile)
         loss.backward()

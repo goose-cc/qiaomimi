@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from TransformerInverse import InverseTransformer1D
+from TransformerInverse import InverseTransformer1D, InverseTransformerPeakResidual1D
 from mc_inverse_loss import MonteCarloInverseLoss
 from train_mc_parameter_pool_transformer_loss import OnlinePhysics, normalize_prediction_shape
 
@@ -115,11 +115,12 @@ def open_parameter_pool(pool_dir: Path) -> Tuple[np.memmap, int, Dict[str, Any]]
     return pool, int(usable_rows), metadata
 
 
-def build_model(saved_args: Dict[str, Any], device: torch.device) -> InverseTransformer1D:
-    if saved_args.get("model_type", "transformer") != "transformer":
+def build_model(saved_args: Dict[str, Any], device: torch.device) -> torch.nn.Module:
+    model_type = saved_args.get("model_type", "transformer")
+    if model_type not in {"transformer", "transformer_peak"}:
         raise RuntimeError("此验证脚本当前只用于 Transformer checkpoint。")
 
-    model = InverseTransformer1D(
+    common = dict(
         input_length=int(saved_args.get("input_points", 100)),
         output_length=int(saved_args.get("output_points", 100)),
         d_model=int(saved_args.get("transformer_d_model", 64)),
@@ -140,6 +141,14 @@ def build_model(saved_args: Dict[str, Any], device: torch.device) -> InverseTran
         ),
         rms_eps=float(saved_args.get("transformer_rms_eps", 1e-8)),
     )
+    if model_type == "transformer_peak":
+        common.update(
+            data_scale=float(saved_args.get("data_scale", 160000.0)),
+            shift=float(saved_args.get("shift", 400.0)),
+        )
+        model = InverseTransformerPeakResidual1D(**common)
+    else:
+        model = InverseTransformer1D(**common)
     return model.to(device)
 
 
@@ -359,6 +368,7 @@ def main() -> None:
     all_g_noisy: List[np.ndarray] = []
     all_g_pred: List[np.ndarray] = []
     all_g_true_discrete: List[np.ndarray] = []
+    all_resonance_pred: List[np.ndarray] = []
 
     print("=" * 72)
     print("开始固定验证")
@@ -400,7 +410,16 @@ def main() -> None:
             g_clean = g_clean_2d.unsqueeze(1)
             g_noisy = g_noisy_2d.unsqueeze(1)
 
-            f_pred = model(g_noisy)
+            if hasattr(model, "forward_with_components"):
+                (
+                    f_pred,
+                    _,
+                    resonance_pred_component,
+                    _,
+                ) = model.forward_with_components(g_noisy)
+                all_resonance_pred.append(as_numpy(resonance_pred_component.squeeze(1)))
+            else:
+                f_pred = model(g_noisy)
             f_pred = normalize_prediction_shape(f_pred, f_true)
             g_pred = criterion.physics_forward_integral(f_pred)
             g_true_discrete = criterion.physics_forward_integral(f_true)
@@ -422,6 +441,10 @@ def main() -> None:
     g_noisy_arr = np.concatenate(all_g_noisy, axis=0)
     g_pred_arr = np.concatenate(all_g_pred, axis=0)
     g_true_discrete_arr = np.concatenate(all_g_true_discrete, axis=0)
+    resonance_pred_component_arr = (
+        np.concatenate(all_resonance_pred, axis=0)
+        if all_resonance_pred else None
+    )
 
     f_true_t = torch.from_numpy(f_true_arr)
     f_pred_t = torch.from_numpy(f_pred_arr)
@@ -491,7 +514,12 @@ def main() -> None:
     background_true = (
         scale_value * (a2 * s_row + a3) / (s_row + shift_value) ** 2
     )
-    resonance_pred_diag = f_pred_arr.astype(np.float64) - background_true
+    if resonance_pred_component_arr is not None:
+        resonance_pred_diag = resonance_pred_component_arr.astype(np.float64)
+        resonance_prediction_source = "explicit_model_resonance_branch"
+    else:
+        resonance_pred_diag = f_pred_arr.astype(np.float64) - background_true
+        resonance_prediction_source = "f_pred_minus_true_background_diagnostic"
     resonance_error = resonance_pred_diag - resonance_true
     resonance_mse_scaled = np.mean(resonance_error**2, axis=1)
     resonance_rmse_scaled = np.sqrt(resonance_mse_scaled)
@@ -516,11 +544,13 @@ def main() -> None:
         np.abs(pred_res_at_true - true_res_height)
         / np.maximum(np.abs(true_res_height), 1e-12)
     )
+    visible_threshold = float(saved_args.get("min_resonance_visibility", 0.10))
+    width_cell_threshold = float(saved_args.get("min_width_grid_cells", 1.0))
     visible_peak_mask = (
         (params_arr[:, 3] >= s_grid[0])
         & (params_arr[:, 3] <= s_grid[-1])
-        & (resonance_visibility >= 0.10)
-        & (width_grid_cells >= 1.0)
+        & (resonance_visibility >= visible_threshold)
+        & (width_grid_cells >= width_cell_threshold)
     )
 
     # Legacy complete-spectrum argmax metrics are kept for backward compatibility,
@@ -664,6 +694,7 @@ def main() -> None:
         "g_relative_l2_vs_discrete_clean": summarize_vector(g_rel_discrete),
         "clean_discrete_representation_gap": summarize_vector(representation_gap),
         "visible_peak_sample_count": int(np.sum(visible_peak_mask)),
+        "resonance_prediction_source": resonance_prediction_source,
         "resonance_visibility": summarize_vector(resonance_visibility),
         "resonance_relative_l2_all": summarize_vector(resonance_relative_l2),
         "resonance_relative_l2_visible": (
@@ -698,11 +729,12 @@ def main() -> None:
                 "对等长向量，它与 f_relative_l2 数值相同。"
             ),
             "resonance_metrics": (
-                "resonance_* 使用已知合成参数计算真实背景并从 f_pred 中减去；"
-                "用于验证峰恢复，不适用于没有真值参数的真实未知样本。"
+                "transformer_peak 使用模型显式输出的非负共振分支；"
+                "旧 V2 才使用 f_pred 减去真实背景的诊断残差。"
             ),
             "visible_peak_eligible": (
-                "默认要求 m 在 s 区间内、共振可见度>=0.10、m*gamma 至少覆盖1个网格。"
+                "阈值沿用训练 checkpoint 中的 min_resonance_visibility 和 "
+                "min_width_grid_cells。"
             ),
             "peak_error": (
                 "peak_s_error 是旧的完整谱全局 argmax 指标，不等同于 Lorentz 共振中心；"

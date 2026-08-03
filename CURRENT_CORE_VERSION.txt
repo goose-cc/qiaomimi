@@ -1,1 +1,6 @@
-V2.5_PEAK_CORRECTED
+V2.6 narrow-peak correction
+- explicit physical background branch
+- nonnegative free resonance branch
+- peak location distribution supervision
+- 256-point recommended output
+- targeted narrow-peak training pool
