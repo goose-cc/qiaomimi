@@ -1,0 +1,13 @@
+V2.7 conservative peak fine-tune patch test report
+
+Completed checks:
+1. Python syntax compilation passed for all patched files.
+2. All legacy loss profiles and peak_finetune passed forward/backward smoke tests.
+3. peak_finetune accepts [a1,a2,a3,m,gamma] and reports peak_local/eligible_fraction.
+4. --init-model-weights loads a full checkpoint model_state_dict without loading optimizer state.
+5. A two-step CPU end-to-end training run completed and saved latest/best/step model files.
+6. validate_mc_transformer.py successfully loaded a model_step_*.pth through --weights-file.
+
+Not tested:
+- The user's actual V2 checkpoint.
+- Long GPU training or final scientific improvement.

@@ -41,7 +41,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 4
+SCRIPT_VERSION = 7
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -100,9 +100,13 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "base", "mse_grad", "huber_grad", "pinn",
             "pinn_smooth", "pinn_tikhonov", "pinn_huber", "pinn_full",
+            "peak_finetune",
         ),
-        default="pinn",
-        help="组合损失类型；推荐先用 pinn",
+        default="peak_finetune",
+        help=(
+            "组合损失类型；peak_finetune 保留完整谱主损失，并加入小权重峰区、"
+            "梯度和正演保护项，专用于从 V2 权重保守微调"
+        ),
     )
     parser.add_argument(
         "--loss-normalization",
@@ -119,8 +123,27 @@ def parse_args() -> argparse.Namespace:
             "noisy=网络输入；discrete-clean=由100点真值再做梯形积分"
         ),
     )
-    parser.add_argument("--lambda-grad", type=float, default=0.1)
-    parser.add_argument("--lambda-physics", type=float, default=0.1)
+    parser.add_argument("--lambda-grad", type=float, default=0.02)
+    parser.add_argument("--lambda-physics", type=float, default=0.03)
+    parser.add_argument("--lambda-peak", type=float, default=0.10)
+    parser.add_argument("--peak-window-widths", type=float, default=3.0)
+    parser.add_argument("--peak-width-min", type=float, default=0.06)
+    parser.add_argument("--peak-width-max", type=float, default=0.50)
+    parser.add_argument("--min-resonance-visibility", type=float, default=0.10)
+    peak_domain = parser.add_mutually_exclusive_group()
+    peak_domain.add_argument(
+        "--peak-in-domain-only",
+        dest="peak_in_domain_only",
+        action="store_true",
+        help="峰区监督只用于中心 m 位于输出 s 区间内的样本",
+    )
+    peak_domain.add_argument(
+        "--allow-outside-domain-peak-loss",
+        dest="peak_in_domain_only",
+        action="store_false",
+        help="允许区间外峰参与峰区监督（不推荐）",
+    )
+    parser.set_defaults(peak_in_domain_only=True)
     parser.add_argument("--lambda-smooth", type=float, default=0.0)
     parser.add_argument("--lambda-tv", type=float, default=0.0)
     parser.add_argument("--lambda-tikhonov", type=float, default=0.0)
@@ -190,6 +213,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cpu-threads", type=int, default=0)
     parser.add_argument("--amp", action="store_true", help="CUDA 上启用混合精度")
     parser.add_argument("--deterministic", action="store_true")
+    parser.add_argument(
+        "--init-model-weights",
+        default="",
+        help=(
+            "仅加载模型权重作为新实验起点；支持纯 state_dict、best_model.pth "
+            "或含 model_state_dict 的 latest_checkpoint.pth。不会恢复旧优化器。"
+        ),
+    )
+    parser.add_argument(
+        "--save-step-models",
+        action="store_true",
+        help="每次 checkpoint 时额外保存 model_step_XXXXXXXX.pth，便于逐点验证",
+    )
 
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -242,7 +278,9 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.transformer_rms_eps <= 0:
         raise ValueError("--transformer-rms-eps 必须大于 0")
     for name in (
-        "lambda_grad", "lambda_physics", "lambda_smooth",
+        "lambda_grad", "lambda_physics", "lambda_peak",
+        "peak_window_widths", "peak_width_min", "peak_width_max",
+        "min_resonance_visibility", "lambda_smooth",
         "lambda_tv", "lambda_tikhonov",
     ):
         if getattr(args, name) < 0:
@@ -251,6 +289,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--huber-beta 必须大于 0")
     if args.loss_eps <= 0:
         raise ValueError("--loss-eps 必须大于 0")
+    if args.peak_width_max > 0 and args.peak_width_max < args.peak_width_min:
+        raise ValueError("--peak-width-max 必须大于等于 --peak-width-min，或设为0表示无上限")
+    if args.resume and args.init_model_weights:
+        raise ValueError("--resume 与 --init-model-weights 不能同时使用")
 
 
 def choose_device(name: str) -> torch.device:
@@ -718,6 +760,41 @@ def move_optimizer_state(optimizer: torch.optim.Optimizer, device: torch.device)
                 state[key] = value.to(device)
 
 
+def load_initial_model_weights(
+    path: Path,
+    *,
+    model: nn.Module,
+    device: torch.device,
+) -> None:
+    """Load V2 model weights only, without importing optimizer/RNG state."""
+    if not path.exists():
+        raise FileNotFoundError(f"找不到初始模型权重：{path}")
+    try:
+        value = torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+        value = torch.load(path, map_location="cpu")
+
+    state = value
+    if isinstance(value, dict) and "model_state_dict" in value:
+        state = value["model_state_dict"]
+    elif isinstance(value, dict) and "state_dict" in value:
+        state = value["state_dict"]
+
+    if not isinstance(state, dict):
+        raise RuntimeError("初始权重文件既不是 state_dict，也不含 model_state_dict。")
+
+    try:
+        model.load_state_dict(state, strict=True)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "初始权重与当前 V2 模型结构不兼容。请确认 input/output 都是100点，"
+            "Transformer 尺寸与原 V2 完全一致。"
+        ) from exc
+    model.to(device)
+    print(f"已仅加载初始模型权重: {path.resolve()}")
+    print("优化器、训练步数和随机状态均从新实验重新开始。")
+
+
 def remove_fresh_checkpoint_files(checkpoint_dir: Path) -> None:
     names = (
         "latest_checkpoint.pth",
@@ -730,6 +807,9 @@ def remove_fresh_checkpoint_files(checkpoint_dir: Path) -> None:
         if path.exists():
             path.unlink()
             print(f"--fresh 已删除旧文件: {path}")
+    for path in checkpoint_dir.glob("model_step_*.pth"):
+        path.unlink()
+        print(f"--fresh 已删除旧文件: {path}")
 
 
 def build_checkpoint(
@@ -843,7 +923,9 @@ def validate_resume_compatibility(
         "s_min", "s_max", "q2_min", "q2_max", "shift",
         "data_scale", "noise_level", "integration_points",
         "physics_dtype", "loss_profile", "loss_normalization",
-        "physics_target", "lambda_grad", "lambda_physics",
+        "physics_target", "lambda_grad", "lambda_physics", "lambda_peak",
+        "peak_window_widths", "peak_width_min", "peak_width_max",
+        "min_resonance_visibility", "peak_in_domain_only",
         "lambda_smooth", "lambda_tv", "lambda_tikhonov",
         "huber_beta", "loss_eps", "learning_rate", "weight_decay",
         "grad_clip", "batch_size", "amp",
@@ -968,6 +1050,14 @@ def train(args: argparse.Namespace) -> None:
         normalization=args.loss_normalization,
         lambda_grad=args.lambda_grad,
         lambda_physics=args.lambda_physics,
+        lambda_peak=args.lambda_peak,
+        peak_window_widths=args.peak_window_widths,
+        peak_width_min=args.peak_width_min,
+        peak_width_max=args.peak_width_max,
+        min_resonance_visibility=args.min_resonance_visibility,
+        peak_in_domain_only=args.peak_in_domain_only,
+        data_scale=args.data_scale,
+        shift=args.shift,
         lambda_smooth=args.lambda_smooth,
         lambda_tv=args.lambda_tv,
         lambda_tikhonov=args.lambda_tikhonov,
@@ -987,6 +1077,13 @@ def train(args: argparse.Namespace) -> None:
         raise RuntimeError(
             f"检测到已有检查点：{latest_path}\n"
             "为避免误覆盖，请明确使用 --resume 或 --fresh。"
+        )
+
+    if args.init_model_weights:
+        load_initial_model_weights(
+            Path(args.init_model_weights),
+            model=model,
+            device=device,
         )
 
     next_parameter_id = 0
@@ -1055,10 +1152,20 @@ def train(args: argparse.Namespace) -> None:
         )
     print(
         "loss weights: "
-        f"grad={args.lambda_grad:g}, physics={args.lambda_physics:g}, "
-        f"smooth={args.lambda_smooth:g}, tv={args.lambda_tv:g}, "
+        f"grad={args.lambda_grad:g}, peak={args.lambda_peak:g}, "
+        f"physics={args.lambda_physics:g}, smooth={args.lambda_smooth:g}, "
+        f"tv={args.lambda_tv:g}, "
         f"tikhonov={args.lambda_tikhonov:g}"
     )
+    if args.loss_profile == "peak_finetune":
+        print(
+            "peak supervision: "
+            f"width=[{args.peak_width_min:g}, {args.peak_width_max:g}), "
+            f"visibility>={args.min_resonance_visibility:g}, "
+            f"window=±{args.peak_window_widths:g}*max(mgamma, ds)"
+        )
+    if args.init_model_weights:
+        print(f"initial V2 weights: {Path(args.init_model_weights).resolve()}")
     print(f"max_hours: {args.max_hours}")
     print(f"max_steps: {args.max_steps if args.max_steps > 0 else 'unlimited'}")
     print("=" * 72)
@@ -1109,7 +1216,6 @@ def train(args: argparse.Namespace) -> None:
                 )
 
                 target_scaled, g_clean_scaled = physics.make_clean_batch(params)
-                del params
 
                 local_offset = 0
                 chunk_size = chunk_end - block_offset
@@ -1132,6 +1238,7 @@ def train(args: argparse.Namespace) -> None:
 
                     target = target_scaled[local_offset:batch_end].unsqueeze(1)
                     g_clean = g_clean_scaled[local_offset:batch_end]
+                    batch_params = params[local_offset:batch_end]
                     g_noisy = physics.add_noise(g_clean).unsqueeze(1)
 
                     optimizer.zero_grad(set_to_none=True)
@@ -1150,7 +1257,10 @@ def train(args: argparse.Namespace) -> None:
                             # 与100点 f_true 完全离散一致，适合极窄峰标签不可解析时。
                             g_reference = criterion.physics_forward_integral(target)
                         loss, loss_logs = criterion(
-                            prediction, target, g_reference
+                            prediction,
+                            target,
+                            g_reference,
+                            params=batch_params,
                         )
 
                     if not torch.isfinite(loss):
@@ -1209,6 +1319,8 @@ def train(args: argparse.Namespace) -> None:
                             f"loss={loss_value:.6e} "
                             f"data={loss_logs['data_mse']:.3e} "
                             f"grad={loss_logs['grad']:.3e} "
+                            f"peak={loss_logs['peak_local']:.3e} "
+                            f"eligible={loss_logs['eligible_fraction']:.2%} "
                             f"phys={loss_logs['physics']:.3e} "
                             f"rolling={rolling_score:.6e} "
                             f"throughput={throughput:,.1f} samples/s"
@@ -1236,8 +1348,14 @@ def train(args: argparse.Namespace) -> None:
                         )
                         atomic_torch_save(checkpoint, latest_path)
                         print(f"已保存 latest checkpoint: {latest_path}")
+                        if args.save_step_models:
+                            step_path = checkpoint_dir / (
+                                "model_step_%08d.pth" % global_step
+                            )
+                            atomic_torch_save(model.state_dict(), step_path)
+                            print(f"已保存 step model: {step_path}")
 
-                del target_scaled, g_clean_scaled
+                del params, target_scaled, g_clean_scaled
                 block_offset = chunk_end
 
     except KeyboardInterrupt:

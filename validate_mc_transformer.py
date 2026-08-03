@@ -45,6 +45,14 @@ def parse_args() -> argparse.Namespace:
         default="best",
         help="best 使用 best_model.pth；latest 使用 latest_checkpoint.pth 中的模型权重",
     )
+    parser.add_argument(
+        "--weights-file",
+        default="",
+        help=(
+            "可选的纯 state_dict 文件，例如 model_step_00001000.pth。"
+            "模型结构仍从 checkpoint-dir/latest_checkpoint.pth 读取。"
+        ),
+    )
     parser.add_argument("--num-samples", type=int, default=5000)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=20260802)
@@ -146,6 +154,7 @@ def build_model(saved_args: Dict[str, Any], device: torch.device) -> InverseTran
 def load_model_and_config(
     checkpoint_dir: Path,
     weights_choice: str,
+    weights_file: str,
     device: torch.device,
 ) -> Tuple[torch.nn.Module, Dict[str, Any], Dict[str, Any]]:
     latest_path = checkpoint_dir / "latest_checkpoint.pth"
@@ -163,7 +172,32 @@ def load_model_and_config(
     model = build_model(saved_args, device)
 
     best_info: Dict[str, Any] = {}
-    if weights_choice == "latest":
+    if weights_file:
+        weights_path = Path(weights_file)
+        if not weights_path.exists():
+            raise FileNotFoundError(f"找不到：{weights_path}")
+        try:
+            loaded = torch.load(weights_path, map_location="cpu", weights_only=False)
+        except TypeError:
+            loaded = torch.load(weights_path, map_location="cpu")
+        if isinstance(loaded, dict) and "model_state_dict" in loaded:
+            state_dict = loaded["model_state_dict"]
+            selected_global_step = int(loaded.get("global_step", 0))
+            selected_pool_cycle = int(loaded.get("pool_cycle", 0))
+            selected_next_parameter_id = int(loaded.get("next_parameter_id", 0))
+        else:
+            state_dict = loaded
+            stem = weights_path.stem
+            selected_global_step = 0
+            if stem.startswith("model_step_"):
+                try:
+                    selected_global_step = int(stem.split("model_step_", 1)[1])
+                except ValueError:
+                    selected_global_step = 0
+            selected_pool_cycle = 0
+            selected_next_parameter_id = 0
+        weights_choice = "file"
+    elif weights_choice == "latest":
         state_dict = checkpoint["model_state_dict"]
         weights_path = latest_path
         selected_global_step = int(checkpoint.get("global_step", 0))
@@ -276,6 +310,7 @@ def main() -> None:
     model, saved_args, checkpoint_info = load_model_and_config(
         checkpoint_dir,
         args.weights,
+        args.weights_file,
         device,
     )
 

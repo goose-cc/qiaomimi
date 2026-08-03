@@ -26,6 +26,10 @@ def make_loss(profile: str) -> MonteCarloInverseLoss:
 def main() -> None:
     torch.manual_seed(20260802)
     f_true = torch.rand(8, 1, 100)
+    params = torch.tensor(
+        [[0.18, 0.01, 0.02, 1.0 + 0.3 * i, 0.10] for i in range(8)],
+        dtype=torch.float32,
+    )
 
     reference_loss = make_loss("pinn")
     g_clean = reference_loss.physics_forward_integral(f_true)
@@ -34,7 +38,8 @@ def main() -> None:
 
     for profile in sorted(MonteCarloInverseLoss.VALID_PROFILES):
         loss_fn = make_loss(profile)
-        perfect, perfect_logs = loss_fn(f_true.clone(), f_true, g_clean)
+        kwargs = {"params": params} if profile == "peak_finetune" else {}
+        perfect, perfect_logs = loss_fn(f_true.clone(), f_true, g_clean, **kwargs)
         for key in ("data_mse", "grad", "physics"):
             if perfect_logs[key] > 1e-10:
                 raise RuntimeError(
@@ -45,7 +50,7 @@ def main() -> None:
             raise RuntimeError(f"{profile}: non-finite perfect-prediction loss")
 
         prediction = (f_true + 0.05 * torch.randn_like(f_true)).requires_grad_(True)
-        loss, logs = loss_fn(prediction, f_true, g_clean)
+        loss, logs = loss_fn(prediction, f_true, g_clean, **kwargs)
         if not torch.isfinite(loss):
             raise RuntimeError(f"{profile}: non-finite loss")
         loss.backward()
