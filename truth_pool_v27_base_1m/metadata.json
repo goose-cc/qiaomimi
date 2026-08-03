@@ -1,0 +1,57 @@
+{
+  "format_version": 1,
+  "target_truths": 1000000,
+  "generated_truths": 1000000,
+  "dtype": "float32",
+  "shape": [
+    1000000,
+    5
+  ],
+  "parameter_names": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma"
+  ],
+  "parameter_file": "parameters.dat",
+  "expected_bytes": 20000000,
+  "seed": 20260803,
+  "physics": {
+    "a1_min": 0.0,
+    "a1_max": 0.2,
+    "a2_min": 0.0,
+    "a2_max": 0.05,
+    "a3_min": -0.05,
+    "a3_max": 0.05,
+    "m_min_open": 0.0,
+    "m_max": 2.0,
+    "gamma_min_open": 0.0,
+    "gamma_max": 1.0,
+    "s_min": 0.1764,
+    "s_max": 6.0,
+    "q2_min": -100.0,
+    "q2_max": -6.0,
+    "output_points": 100,
+    "q2_points": 100,
+    "shift": 400.0,
+    "data_scale": 160000.0,
+    "noise_level": 0.09,
+    "parameter_names": [
+      "a1",
+      "a2",
+      "a3",
+      "m",
+      "gamma"
+    ],
+    "rho_formula": "a1/pi * (m*gamma) / ((s-m)^2 + (m*gamma)^2) + a2*s + a3",
+    "target_formula": "u(s) = rho(s)/(s+400)^2",
+    "training_target": "data_scale * u(s)",
+    "training_input": "data_scale * g_noisy(q^2)",
+    "noise_definition": "g_noisy = g_clean + noise_level*RMS(g_clean)*N(0,1)"
+  },
+  "created_unix_time": 1785741048.584634,
+  "complete": true,
+  "updated_unix_time": 1785741055.048538,
+  "acceptance_rate": 0.68509125
+}

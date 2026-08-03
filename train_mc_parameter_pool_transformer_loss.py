@@ -41,7 +41,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 7
+SCRIPT_VERSION = 8
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -150,11 +150,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--huber-beta", type=float, default=0.1)
     parser.add_argument("--loss-eps", type=float, default=1e-8)
 
-    # 与原项目 Transformer 默认设置保持一致
-    parser.add_argument("--transformer-d-model", type=int, default=64)
+    # 当前项目 V2 基线结构。使用 --init-model-weights 加载完整 checkpoint 时，
+    # 程序还会在模型构造前自动读取并覆盖为 checkpoint 中保存的真实结构。
+    parser.add_argument("--transformer-d-model", type=int, default=128)
     parser.add_argument("--transformer-nhead", type=int, default=4)
-    parser.add_argument("--transformer-num-layers", type=int, default=3)
-    parser.add_argument("--transformer-dim-feedforward", type=int, default=128)
+    parser.add_argument("--transformer-num-layers", type=int, default=4)
+    parser.add_argument("--transformer-dim-feedforward", type=int, default=256)
     parser.add_argument("--transformer-dropout", type=float, default=0.1)
     # Python 3.8 兼容：BooleanOptionalAction 是 Python 3.9 才加入的。
     coord_group = parser.add_mutually_exclusive_group()
@@ -760,6 +761,108 @@ def move_optimizer_state(optimizer: torch.optim.Optimizer, device: torch.device)
                 state[key] = value.to(device)
 
 
+def _load_torch_value(path: Path) -> Any:
+    """Load a trusted local checkpoint with PyTorch 2.4--2.6 compatibility."""
+    if not path.exists():
+        raise FileNotFoundError(f"找不到初始模型权重：{path}")
+    try:
+        return torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location="cpu")
+
+
+def apply_initial_model_config(args: argparse.Namespace) -> None:
+    """Make the new model exactly match the V2 initialization checkpoint.
+
+    A full ``latest_checkpoint.pth`` stores the original command-line args.
+    Those model/preprocessing fields must be applied before model construction;
+    otherwise a valid V2 checkpoint can be rejected simply because the new
+    command used different defaults.  Loss, optimizer, noise, pool and training
+    schedule are intentionally not copied.
+    """
+    raw_path = str(getattr(args, "init_model_weights", "") or "").strip()
+    if not raw_path:
+        return
+
+    path = Path(raw_path)
+    value = _load_torch_value(path)
+    saved_args = value.get("args", {}) if isinstance(value, dict) else {}
+
+    model_keys = (
+        "model_type",
+        "input_points",
+        "output_points",
+        "transformer_d_model",
+        "transformer_nhead",
+        "transformer_num_layers",
+        "transformer_dim_feedforward",
+        "transformer_dropout",
+        "transformer_normalize_coordinates",
+        "transformer_rms_normalize_io",
+        "transformer_rms_eps",
+    )
+
+    changed = []
+    if isinstance(saved_args, dict) and saved_args:
+        for key in model_keys:
+            if key not in saved_args or not hasattr(args, key):
+                continue
+            old = getattr(args, key)
+            new = saved_args[key]
+            if old != new:
+                setattr(args, key, new)
+                changed.append((key, old, new))
+    else:
+        # Pure state_dict files do not contain nhead/dropout/preprocessing args.
+        # Infer only fields that are unambiguous from tensor shapes and names.
+        state = value
+        if isinstance(value, dict) and "model_state_dict" in value:
+            state = value["model_state_dict"]
+        elif isinstance(value, dict) and "state_dict" in value:
+            state = value["state_dict"]
+        if isinstance(state, dict):
+            inferred = {}
+            weight = state.get("g_value_embed.weight")
+            if torch.is_tensor(weight) and weight.ndim == 2:
+                inferred["transformer_d_model"] = int(weight.shape[0])
+            ff_weight = state.get("transformer.encoder.layers.0.linear1.weight")
+            if torch.is_tensor(ff_weight) and ff_weight.ndim == 2:
+                inferred["transformer_dim_feedforward"] = int(ff_weight.shape[0])
+            layer_ids = []
+            prefix = "transformer.encoder.layers."
+            for name in state:
+                if not name.startswith(prefix):
+                    continue
+                tail = name[len(prefix):]
+                first = tail.split(".", 1)[0]
+                if first.isdigit():
+                    layer_ids.append(int(first))
+            if layer_ids:
+                inferred["transformer_num_layers"] = max(layer_ids) + 1
+            y_grid = state.get("y_grid")
+            x_grid = state.get("x_grid")
+            if torch.is_tensor(y_grid) and y_grid.ndim >= 2:
+                inferred["input_points"] = int(y_grid.shape[-2])
+            if torch.is_tensor(x_grid) and x_grid.ndim >= 2:
+                inferred["output_points"] = int(x_grid.shape[-2])
+            for key, new in inferred.items():
+                old = getattr(args, key)
+                if old != new:
+                    setattr(args, key, new)
+                    changed.append((key, old, new))
+
+    print("=" * 72)
+    print(f"初始化权重配置来源: {path.resolve()}")
+    if changed:
+        print("模型构造参数已自动对齐原 V2 checkpoint:")
+        for key, old, new in changed:
+            print(f"  {key}: {old!r} -> {new!r}")
+    else:
+        print("当前模型构造参数已与初始化 checkpoint 一致。")
+    print("注意：只同步模型结构和预处理；Loss、学习率和训练步数仍使用本次命令。")
+    print("=" * 72)
+
+
 def load_initial_model_weights(
     path: Path,
     *,
@@ -767,12 +870,7 @@ def load_initial_model_weights(
     device: torch.device,
 ) -> None:
     """Load V2 model weights only, without importing optimizer/RNG state."""
-    if not path.exists():
-        raise FileNotFoundError(f"找不到初始模型权重：{path}")
-    try:
-        value = torch.load(path, map_location="cpu", weights_only=False)
-    except TypeError:
-        value = torch.load(path, map_location="cpu")
+    value = _load_torch_value(path)
 
     state = value
     if isinstance(value, dict) and "model_state_dict" in value:
@@ -1014,6 +1112,10 @@ def save_best_model(
 
 
 def train(args: argparse.Namespace) -> None:
+    # The initialization checkpoint defines the exact V2 architecture. Apply it
+    # before validation and model construction so stale CLI defaults cannot build
+    # an incompatible network.
+    apply_initial_model_config(args)
     validate_args(args)
 
     pool_dir = Path(args.pool_dir)

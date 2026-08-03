@@ -1,0 +1,18 @@
+{
+  "generated_truths": 1000000,
+  "candidates_seen": 1600000,
+  "accepted_total": 1096146,
+  "candidate_batches": 8,
+  "acceptance_rate": 0.68509125,
+  "rng_state": {
+    "bit_generator": "PCG64",
+    "state": {
+      "state": 9754221126111061603499375057965503893,
+      "inc": 166122690482121929491770933472435370785
+    },
+    "has_uint32": 0,
+    "uinteger": 0
+  },
+  "updated_unix_time": 1785741055.0422285,
+  "complete": true
+}
