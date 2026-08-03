@@ -30,6 +30,7 @@ class PhysicsConfig:
 
     output_points: int = 100
     q2_points: int = 100
+    shift: float = 400.0
     data_scale: float = 160000.0
     noise_level: float = 0.09
 
@@ -39,7 +40,7 @@ class PhysicsConfig:
         result["rho_formula"] = (
             "a1/pi * (m*gamma) / ((s-m)^2 + (m*gamma)^2) + a2*s + a3"
         )
-        result["target_formula"] = "u(s) = rho(s)/(s+400)^2"
+        result["target_formula"] = f"u(s) = rho(s)/(s+{self.shift:g})^2"
         result["training_target"] = "data_scale * u(s)"
         result["training_input"] = "data_scale * g_noisy(q^2)"
         result["noise_definition"] = (

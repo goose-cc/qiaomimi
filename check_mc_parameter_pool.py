@@ -22,6 +22,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.sample_size <= 0:
+        raise ValueError("--sample-size must be positive")
+
     root = Path(args.pool_dir)
     metadata = read_json(root / "metadata.json")
     state = read_json(root / "generation_state.json")
@@ -29,7 +32,23 @@ def main() -> None:
 
     target = int(metadata["target_truths"])
     generated = int(state["generated_truths"])
-    complete = bool(state.get("complete", False))
+    state_complete = bool(state.get("complete", False))
+    metadata_complete = bool(metadata.get("complete", False))
+    if state_complete != metadata_complete:
+        raise RuntimeError(
+            "metadata.json and generation_state.json disagree about completion"
+        )
+    complete = state_complete
+
+    if metadata.get("dtype") != "float32":
+        raise RuntimeError(f"Unexpected pool dtype: {metadata.get('dtype')!r}")
+    if list(metadata.get("shape", [])) != [target, 5]:
+        raise RuntimeError(f"Unexpected pool shape metadata: {metadata.get('shape')!r}")
+    if list(metadata.get("parameter_names", [])) != ["a1", "a2", "a3", "m", "gamma"]:
+        raise RuntimeError("Unexpected parameter_names in metadata.json")
+    if generated > target:
+        raise RuntimeError("generated_truths exceeds target_truths")
+
     expected_bytes = target * 5 * 4
     actual_bytes = path.stat().st_size
 

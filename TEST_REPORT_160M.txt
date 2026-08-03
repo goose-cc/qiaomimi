@@ -1,0 +1,19 @@
+Final local QA date: 2026-08-02
+QA environment: Python 3.13, PyTorch 2.10 CPU
+Recommended user environment remains Python 3.10/3.11 with the project's pinned NumPy/SciPy versions.
+
+Passed checks:
+1. All Python files compile.
+2. All loss profiles produce finite losses and finite backward gradients.
+3. Perfect predictions have zero data, gradient, and physics residuals.
+4. Continuous rho non-negativity check agrees with a dense 20,001-point scan on sampled rows.
+5. NumPy and Torch target/forward physics implementations agree within tolerance.
+6. Parameter pool generation succeeds.
+7. Interrupted parameter pool generation resumes correctly.
+8. Parameter pool metadata, file size, ranges, finite values, and validity checks pass.
+9. Transformer + PINN small end-to-end training saves best and latest checkpoints.
+10. Full checkpoint resume succeeds on PyTorch versions where weights_only defaults to True.
+11. Resume with a changed critical loss parameter is rejected.
+12. Independent validation produces JSON, CSV, RMSE/NRMSE metrics, and plots.
+
+Note: the smoke validation reused its tiny training pool only to test code execution. Formal model quality must be measured on a separately generated validation/test pool.

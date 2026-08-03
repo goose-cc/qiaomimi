@@ -74,7 +74,15 @@ def main() -> None:
             raise ValueError(
                 "The requested --num-truths differs from the existing pool target"
             )
+        if metadata.get("dtype") != "float32":
+            raise RuntimeError("Existing pool dtype is not float32")
+        if list(metadata.get("shape", [])) != [int(args.num_truths), 5]:
+            raise RuntimeError("Existing pool shape metadata is inconsistent")
+        if list(metadata.get("parameter_names", [])) != list(PARAMETER_NAMES):
+            raise RuntimeError("Existing pool parameter order is inconsistent")
         generated = int(state["generated_truths"])
+        if not 0 <= generated <= int(args.num_truths):
+            raise RuntimeError("Saved generated_truths is outside the valid range")
         candidates_seen = int(state["candidates_seen"])
         accepted_total = int(state["accepted_total"])
         candidate_batches = int(state["candidate_batches"])

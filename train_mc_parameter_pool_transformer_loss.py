@@ -13,8 +13,9 @@
 4. 每次启动都会打印模型类、模块、源码文件和参数量。
 5. 从 parameters.dat 顺序读取五维参数：
    [a1, a2, a3, m, gamma]
-6. 在线计算 rho(s)、u(s)、正向积分和 9% RMS 高斯白噪声。
-7. 支持按时间停止、检查点续训和参数池循环覆盖。
+6. 在线计算 rho(s)、u(s)、稳定正向积分和 9% RMS 高斯白噪声。
+7. 使用监督项 + 梯度项 + 物理积分一致性项的可配置组合 loss。
+8. 支持按时间停止、检查点续训和参数池循环覆盖。
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import os
 import random
 import time
 from collections import deque
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -35,19 +37,22 @@ import torch
 import torch.nn as nn
 from numpy.polynomial.legendre import leggauss
 
+from mc_inverse_loss import MonteCarloInverseLoss
+from mc_pool_config import DEFAULT_PHYSICS
 
-SCRIPT_VERSION = 2
+
+SCRIPT_VERSION = 4
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
 # 新物理问题的默认范围
-DEFAULT_S_MIN = 0.1764
-DEFAULT_S_MAX = 6.0
-DEFAULT_Q2_MIN = -100.0
-DEFAULT_Q2_MAX = -6.0
-DEFAULT_SHIFT = 400.0
-DEFAULT_DATA_SCALE = 160000.0
-DEFAULT_NOISE_LEVEL = 0.09
+DEFAULT_S_MIN = DEFAULT_PHYSICS.s_min
+DEFAULT_S_MAX = DEFAULT_PHYSICS.s_max
+DEFAULT_Q2_MIN = DEFAULT_PHYSICS.q2_min
+DEFAULT_Q2_MAX = DEFAULT_PHYSICS.q2_max
+DEFAULT_SHIFT = DEFAULT_PHYSICS.shift
+DEFAULT_DATA_SCALE = DEFAULT_PHYSICS.data_scale
+DEFAULT_NOISE_LEVEL = DEFAULT_PHYSICS.noise_level
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,9 +91,41 @@ def parse_args() -> argparse.Namespace:
         help="在线物理计算精度；GPU 上 float64 会明显变慢",
     )
 
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--grad-clip", type=float, default=1.0)
+
+    parser.add_argument(
+        "--loss-profile",
+        choices=(
+            "base", "mse_grad", "huber_grad", "pinn",
+            "pinn_smooth", "pinn_tikhonov", "pinn_huber", "pinn_full",
+        ),
+        default="pinn",
+        help="组合损失类型；推荐先用 pinn",
+    )
+    parser.add_argument(
+        "--loss-normalization",
+        choices=("relative", "absolute"),
+        default="relative",
+        help="relative 会按每条样本的 RMS 归一化，避免大振幅样本支配训练",
+    )
+    parser.add_argument(
+        "--physics-target",
+        choices=("clean", "noisy", "discrete-clean"),
+        default="clean",
+        help=(
+            "physics loss 的 g 参考：clean=高精度无噪声正演；"
+            "noisy=网络输入；discrete-clean=由100点真值再做梯形积分"
+        ),
+    )
+    parser.add_argument("--lambda-grad", type=float, default=0.1)
+    parser.add_argument("--lambda-physics", type=float, default=0.1)
+    parser.add_argument("--lambda-smooth", type=float, default=0.0)
+    parser.add_argument("--lambda-tv", type=float, default=0.0)
+    parser.add_argument("--lambda-tikhonov", type=float, default=0.0)
+    parser.add_argument("--huber-beta", type=float, default=0.1)
+    parser.add_argument("--loss-eps", type=float, default=1e-8)
 
     # 与原项目 Transformer 默认设置保持一致
     parser.add_argument("--transformer-d-model", type=int, default=64)
@@ -96,6 +133,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--transformer-num-layers", type=int, default=3)
     parser.add_argument("--transformer-dim-feedforward", type=int, default=128)
     parser.add_argument("--transformer-dropout", type=float, default=0.1)
+    # Python 3.8 兼容：BooleanOptionalAction 是 Python 3.9 才加入的。
+    coord_group = parser.add_mutually_exclusive_group()
+    coord_group.add_argument(
+        "--transformer-normalize-coordinates",
+        dest="transformer_normalize_coordinates",
+        action="store_true",
+        help="将 x/q2 位置坐标映射到 [-1,1] 后再嵌入；本问题必须启用",
+    )
+    coord_group.add_argument(
+        "--no-transformer-normalize-coordinates",
+        dest="transformer_normalize_coordinates",
+        action="store_false",
+        help="关闭坐标归一化（本问题不推荐）",
+    )
+    parser.set_defaults(transformer_normalize_coordinates=True)
+
+    rms_group = parser.add_mutually_exclusive_group()
+    rms_group.add_argument(
+        "--transformer-rms-normalize-io",
+        dest="transformer_rms_normalize_io",
+        action="store_true",
+        help="每条 g 按自身 RMS 归一化，网络输出后乘回同一尺度",
+    )
+    rms_group.add_argument(
+        "--no-transformer-rms-normalize-io",
+        dest="transformer_rms_normalize_io",
+        action="store_false",
+        help="关闭逐样本 RMS 归一化（本问题不推荐）",
+    )
+    parser.set_defaults(transformer_rms_normalize_io=True)
+    parser.add_argument(
+        "--transformer-rms-eps",
+        type=float,
+        default=1e-8,
+        help="样本 RMS 归一化的数值下限",
+    )
 
     parser.add_argument("--max-hours", type=float, default=23.0)
     parser.add_argument(
@@ -166,6 +239,18 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--data-scale 必须大于 0")
     if args.transformer_d_model % args.transformer_nhead != 0:
         raise ValueError("transformer d_model 必须能被 nhead 整除")
+    if args.transformer_rms_eps <= 0:
+        raise ValueError("--transformer-rms-eps 必须大于 0")
+    for name in (
+        "lambda_grad", "lambda_physics", "lambda_smooth",
+        "lambda_tv", "lambda_tikhonov",
+    ):
+        if getattr(args, name) < 0:
+            raise ValueError(f"--{name.replace('_', '-')} 不能为负数")
+    if args.huber_beta <= 0:
+        raise ValueError("--huber-beta 必须大于 0")
+    if args.loss_eps <= 0:
+        raise ValueError("--loss-eps 必须大于 0")
 
 
 def choose_device(name: str) -> torch.device:
@@ -235,6 +320,9 @@ def build_original_project_model(
                 x_max=args.s_max,
                 y_min=args.q2_min,
                 y_max=args.q2_max,
+                normalize_coordinates=args.transformer_normalize_coordinates,
+                rms_normalize_io=args.transformer_rms_normalize_io,
+                rms_eps=args.transformer_rms_eps,
             )
         elif args.model_type == "cnn":
             from PINet import PeakInversionCNN
@@ -438,23 +526,20 @@ class OnlinePhysics:
         )
 
         nodes, weights = leggauss(args.integration_points)
-        s_integral = (
-            0.5 * (args.s_max - args.s_min) * nodes
-            + 0.5 * (args.s_max + args.s_min)
-        )
-        w_integral = 0.5 * (args.s_max - args.s_min) * weights
+        self.gl_nodes = torch.as_tensor(nodes, dtype=self.dtype, device=device)
+        self.gl_weights = torch.as_tensor(weights, dtype=self.dtype, device=device)
+        self.s_min = float(args.s_min)
+        self.s_max = float(args.s_max)
 
-        self.s_integral = torch.as_tensor(
-            s_integral, dtype=self.dtype, device=device
+        # 平滑线性背景使用固定 Gauss-Legendre；窄 Lorentz 峰使用 atan 变量代换。
+        s_mid = 0.5 * (args.s_max + args.s_min)
+        s_half = 0.5 * (args.s_max - args.s_min)
+        self.s_fixed = s_mid + s_half * self.gl_nodes
+        self.s_fixed_weights = s_half * self.gl_weights
+        self.background_kernel = self.s_fixed_weights[:, None] / (
+            self.s_fixed[:, None] - self.q2_grid[None, :]
         )
-        weights_t = torch.as_tensor(
-            w_integral, dtype=self.dtype, device=device
-        )
-
-        # kernel[k, j] = w_k / (s_k - q2_j)
-        self.forward_kernel = weights_t[:, None] / (
-            self.s_integral[:, None] - self.q2_grid[None, :]
-        )
+        self.q_block_size = 25
 
     @staticmethod
     def _rho(s: torch.Tensor, params: torch.Tensor) -> torch.Tensor:
@@ -485,13 +570,39 @@ class OnlinePhysics:
             * self.data_scale
         )
 
-        rho_integral = self._rho(self.s_integral, params)
-        u_integral_scaled = (
-            rho_integral
-            / (self.s_integral[None, :] + self.shift) ** 2
-            * self.data_scale
+        a1 = params[:, 0:1]
+        a2 = params[:, 1:2]
+        a3 = params[:, 2:3]
+        mass = params[:, 3:4]
+        gamma = params[:, 4:5]
+        width = mass * gamma
+
+        # 线性背景：(a2*s+a3)/(s+shift)^2
+        background = (
+            a2 * self.s_fixed[None, :] + a3
+        ) / (self.s_fixed[None, :] + self.shift) ** 2
+        g_clean = background @ self.background_kernel
+
+        # Lorentz 共振峰采用 z=atan((s-m)/(m*gamma))，避免窄峰被固定 s 网格漏掉。
+        z0 = torch.atan((self.s_min - mass) / width)
+        z1 = torch.atan((self.s_max - mass) / width)
+        z_mid = 0.5 * (z0 + z1)
+        z_half = 0.5 * (z1 - z0)
+        z = z_mid + z_half * self.gl_nodes[None, :]
+        s_res = mass + width * torch.tan(z)
+        coefficient = (
+            (a1 / math.pi)
+            * z_half
+            * self.gl_weights[None, :]
+            / (s_res + self.shift) ** 2
         )
-        g_clean_scaled = u_integral_scaled @ self.forward_kernel
+        for start in range(0, self.q2_grid.numel(), self.q_block_size):
+            stop = min(start + self.q_block_size, self.q2_grid.numel())
+            denominator = s_res[:, :, None] - self.q2_grid[None, None, start:stop]
+            g_clean[:, start:stop] = g_clean[:, start:stop] + torch.sum(
+                coefficient[:, :, None] / denominator, dim=1
+            )
+        g_clean_scaled = self.data_scale * g_clean
 
         if not torch.isfinite(u_target_scaled).all():
             raise FloatingPointError("u_target_scaled 中出现 NaN 或 Inf。")
@@ -537,6 +648,27 @@ def normalize_prediction_shape(
             f"target={tuple(target.shape)}。"
         )
     return prediction
+
+
+def make_grad_scaler(use_amp: bool):
+    """Create a GradScaler without emitting deprecated torch.cuda.amp warnings."""
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        try:
+            return torch.amp.GradScaler("cuda", enabled=use_amp)
+        except TypeError:
+            try:
+                return torch.amp.GradScaler(device="cuda", enabled=use_amp)
+            except TypeError:
+                return torch.amp.GradScaler(enabled=use_amp)
+    return torch.cuda.amp.GradScaler(enabled=use_amp)
+
+
+def amp_autocast(use_amp: bool):
+    if not use_amp:
+        return nullcontext()
+    if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+        return torch.amp.autocast(device_type="cuda", enabled=True)
+    return torch.cuda.amp.autocast(enabled=True)
 
 
 def atomic_torch_save(value: Any, path: Path) -> None:
@@ -690,6 +822,72 @@ def load_checkpoint(
     return checkpoint
 
 
+def validate_resume_compatibility(
+    checkpoint: Dict[str, Any],
+    args: argparse.Namespace,
+    *,
+    pool_dir: Path,
+    usable_rows: int,
+) -> None:
+    """Reject accidental continuation with a different experiment definition."""
+    saved_args = checkpoint.get("args", {})
+    if not isinstance(saved_args, dict):
+        raise RuntimeError("检查点缺少可验证的 args，不能安全续训。请使用 --fresh。")
+
+    critical_keys = (
+        "model_type", "input_points", "output_points",
+        "transformer_d_model", "transformer_nhead",
+        "transformer_num_layers", "transformer_dim_feedforward",
+        "transformer_dropout", "transformer_normalize_coordinates",
+        "transformer_rms_normalize_io", "transformer_rms_eps",
+        "s_min", "s_max", "q2_min", "q2_max", "shift",
+        "data_scale", "noise_level", "integration_points",
+        "physics_dtype", "loss_profile", "loss_normalization",
+        "physics_target", "lambda_grad", "lambda_physics",
+        "lambda_smooth", "lambda_tv", "lambda_tikhonov",
+        "huber_beta", "loss_eps", "learning_rate", "weight_decay",
+        "grad_clip", "batch_size", "amp",
+    )
+    mismatches = []
+    for key in critical_keys:
+        if key not in saved_args:
+            continue
+        old = saved_args[key]
+        new = getattr(args, key)
+        if isinstance(old, float) or isinstance(new, float):
+            try:
+                equal = math.isclose(float(old), float(new), rel_tol=1e-12, abs_tol=1e-12)
+            except (TypeError, ValueError):
+                equal = old == new
+        else:
+            equal = old == new
+        if not equal:
+            mismatches.append(f"{key}: checkpoint={old!r}, current={new!r}")
+
+    saved_pool = saved_args.get("pool_dir")
+    if saved_pool:
+        try:
+            if Path(saved_pool).resolve() != pool_dir.resolve():
+                mismatches.append(
+                    f"pool_dir: checkpoint={Path(saved_pool).resolve()}, current={pool_dir.resolve()}"
+                )
+        except OSError:
+            pass
+
+    saved_rows = checkpoint.get("pool_usable_rows")
+    if saved_rows is not None and int(saved_rows) != int(usable_rows):
+        mismatches.append(
+            f"pool_usable_rows: checkpoint={int(saved_rows)}, current={int(usable_rows)}"
+        )
+
+    if mismatches:
+        details = "\n  - ".join(mismatches)
+        raise RuntimeError(
+            "续训参数与原检查点不一致：\n  - " + details +
+            "\n为避免混合两个实验，请恢复原参数，或换新 checkpoint-dir 并使用 --fresh。"
+        )
+
+
 def should_stop(
     *,
     args: argparse.Namespace,
@@ -722,7 +920,7 @@ def save_best_model(
     atomic_json_save(
         {
             **model_info,
-            "score_definition": "最近若干训练 batch 的平均 MSE；不是验证集指标",
+            "score_definition": "最近若干训练 batch 的平均组合 loss；不是验证集指标",
             "best_score": float(score),
             "global_step": int(global_step),
             "pool_cycle": int(pool_cycle),
@@ -735,10 +933,6 @@ def save_best_model(
 
 def train(args: argparse.Namespace) -> None:
     validate_args(args)
-    print("=" * 72)
-    print("注意：train_mc_parameter_pool_day.py 是纯 MSE 基线脚本。")
-    print("要使用 Transformer + PINN，请运行 train_mc_parameter_pool_transformer_loss.py。")
-    print("=" * 72)
 
     pool_dir = Path(args.pool_dir)
     checkpoint_dir = Path(args.checkpoint_dir)
@@ -763,10 +957,26 @@ def train(args: argparse.Namespace) -> None:
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
-    criterion = nn.MSELoss()
+    criterion = MonteCarloInverseLoss(
+        s_min=args.s_min,
+        s_max=args.s_max,
+        q2_min=args.q2_min,
+        q2_max=args.q2_max,
+        output_points=args.output_points,
+        input_points=args.input_points,
+        profile=args.loss_profile,
+        normalization=args.loss_normalization,
+        lambda_grad=args.lambda_grad,
+        lambda_physics=args.lambda_physics,
+        lambda_smooth=args.lambda_smooth,
+        lambda_tv=args.lambda_tv,
+        lambda_tikhonov=args.lambda_tikhonov,
+        huber_beta=args.huber_beta,
+        eps=args.loss_eps,
+    ).to(device)
 
     use_amp = bool(args.amp and device.type == "cuda")
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = make_grad_scaler(use_amp)
     physics = OnlinePhysics(args, device)
 
     latest_path = checkpoint_dir / "latest_checkpoint.pth"
@@ -794,6 +1004,9 @@ def train(args: argparse.Namespace) -> None:
             scaler=scaler,
             model_info=model_info,
             device=device,
+        )
+        validate_resume_compatibility(
+            checkpoint, args, pool_dir=pool_dir, usable_rows=usable_rows
         )
         next_parameter_id = int(checkpoint.get("next_parameter_id", 0))
         pool_cycle = int(checkpoint.get("pool_cycle", 0))
@@ -824,6 +1037,28 @@ def train(args: argparse.Namespace) -> None:
     print(f"active_block_size: {args.active_block_size:,}")
     print(f"precompute_chunk_size: {args.precompute_chunk_size:,}")
     print(f"integration_points: {args.integration_points}")
+    print(f"loss_profile: {args.loss_profile}")
+    print(f"loss_normalization: {args.loss_normalization}")
+    print(f"physics_target: {args.physics_target}")
+    print(
+        "transformer scaling: "
+        f"coordinate_norm={args.transformer_normalize_coordinates}, "
+        f"rms_io_norm={args.transformer_rms_normalize_io}"
+    )
+    if args.model_type == "transformer" and not args.transformer_normalize_coordinates:
+        print(
+            "警告：当前 q2 坐标绝对值很大，关闭坐标归一化会让位置嵌入淹没 g 信号。"
+        )
+    if args.model_type == "transformer" and not args.transformer_rms_normalize_io:
+        print(
+            "警告：当前 g_scaled 的幅度通常远小于 1，关闭 RMS I/O 归一化容易造成平均曲线塌缩。"
+        )
+    print(
+        "loss weights: "
+        f"grad={args.lambda_grad:g}, physics={args.lambda_physics:g}, "
+        f"smooth={args.lambda_smooth:g}, tv={args.lambda_tv:g}, "
+        f"tikhonov={args.lambda_tikhonov:g}"
+    )
     print(f"max_hours: {args.max_hours}")
     print(f"max_steps: {args.max_steps if args.max_steps > 0 else 'unlimited'}")
     print("=" * 72)
@@ -901,13 +1136,22 @@ def train(args: argparse.Namespace) -> None:
 
                     optimizer.zero_grad(set_to_none=True)
 
-                    with torch.cuda.amp.autocast(enabled=use_amp):
+                    with amp_autocast(use_amp):
                         prediction = model(g_noisy)
                         prediction = normalize_prediction_shape(
                             prediction,
                             target,
                         )
-                        loss = criterion(prediction, target)
+                        if args.physics_target == "clean":
+                            g_reference = g_clean.unsqueeze(1)
+                        elif args.physics_target == "noisy":
+                            g_reference = g_noisy
+                        else:
+                            # 与100点 f_true 完全离散一致，适合极窄峰标签不可解析时。
+                            g_reference = criterion.physics_forward_integral(target)
+                        loss, loss_logs = criterion(
+                            prediction, target, g_reference
+                        )
 
                     if not torch.isfinite(loss):
                         raise FloatingPointError(
@@ -963,6 +1207,9 @@ def train(args: argparse.Namespace) -> None:
                             f"cycle={pool_cycle} "
                             f"next_id={next_parameter_id:,}/{usable_rows:,} "
                             f"loss={loss_value:.6e} "
+                            f"data={loss_logs['data_mse']:.3e} "
+                            f"grad={loss_logs['grad']:.3e} "
+                            f"phys={loss_logs['physics']:.3e} "
                             f"rolling={rolling_score:.6e} "
                             f"throughput={throughput:,.1f} samples/s"
                         )

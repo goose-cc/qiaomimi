@@ -174,7 +174,7 @@ def scaled_target_u_numpy(
 ) -> np.ndarray:
     s_output, _ = output_grids_numpy(config)
     rho = rho_numpy(parameters, s_output)
-    u = rho / (s_output.reshape(1, -1) + 400.0) ** 2
+    u = rho / (s_output.reshape(1, -1) + config.shift) ** 2
     return (config.data_scale * u).astype(np.float32)
 
 
@@ -203,7 +203,7 @@ def scaled_forward_observation_numpy(
     s_weights = s_half * w
     background = (
         p[:, 1:2] * s_fixed.reshape(1, -1) + p[:, 2:3]
-    ) / (s_fixed.reshape(1, -1) + 400.0) ** 2
+    ) / (s_fixed.reshape(1, -1) + config.shift) ** 2
     background_kernel = (
         s_weights.reshape(-1, 1)
         / (s_fixed.reshape(-1, 1) - q2.reshape(1, -1))
@@ -224,7 +224,7 @@ def scaled_forward_observation_numpy(
         (a1 / np.pi)
         * z_half
         * w.reshape(1, -1)
-        / (s_res + 400.0) ** 2
+        / (s_res + config.shift) ** 2
     )
 
     for start in range(0, len(q2), int(q_block_size)):
@@ -312,7 +312,7 @@ def scaled_curves_torch(
     target = (
         config.data_scale
         * rho_output
-        / (s_output[None, :] + 400.0) ** 2
+        / (s_output[None, :] + config.shift) ** 2
     )
 
     s_mid = 0.5 * (config.s_max + config.s_min)
@@ -321,7 +321,7 @@ def scaled_curves_torch(
     s_weights = s_half * w
     background = (
         a2 * s_fixed[None, :] + a3
-    ) / (s_fixed[None, :] + 400.0) ** 2
+    ) / (s_fixed[None, :] + config.shift) ** 2
     background_kernel = (
         s_weights[:, None]
         / (s_fixed[:, None] - q2[None, :])
@@ -338,7 +338,7 @@ def scaled_curves_torch(
         (a1 / math.pi)
         * z_half
         * w[None, :]
-        / (s_res + 400.0) ** 2
+        / (s_res + config.shift) ** 2
     )
     for start in range(0, config.q2_points, int(q_block_size)):
         stop = min(start + int(q_block_size), config.q2_points)

@@ -1,111 +1,58 @@
-# =========================
 # Python cache
-# =========================
 __pycache__/
-*/__pycache__/
 *.py[cod]
-*$py.class
 
-
-# =========================
 # Virtual environments
-# =========================
 venv/
 .venv/
 env/
 ENV/
 
-
-# =========================
-# IDE / editor
-# =========================
+# IDE / OS
 .vscode/
 .idea/
-
-
-# =========================
-# OS files
-# =========================
 .DS_Store
 Thumbs.db
 
-
-# =========================
-# Temporary files
-# =========================
+# Temporary and log files
 *.tmp
 *.log
 
-
-# =========================
-# Old single-sample dataset folders
-# 旧版“一个样本一个 .npz 文件”的目录
-# =========================
+# Generated datasets
 train/
 val/
 test/
-
-
-# =========================
-# Generated datasets
-# =========================
 percent10/
 percent30/
 *.npz
+*.dat
+truth_pool/
+truth_pool_smoke/
+truth_pool_val_*/
 
-
-# =========================
-# Model weights / checkpoints
-# 忽略其他位置的权重，但上传 model/ 中的全部文件
-# =========================
-*.pth
-*.pt
-*.ckpt
-
-!model/
-!model/**
-
-
-
-# =========================
-# Generated training results
-# =========================
+# Generated figures and validation output
 picture/training_results/
 picture/sample_*.png
 picture/*prediction*.png
 picture/run_info.txt
-
-
-# =========================
-# Generated experiment figures
-# =========================
 picture/exp4_train/
 picture/exp4_val/
 picture/exp4_test_gamma05/
 picture/exp4_test_gamma03/
 figures_exp5/
+validation_results/
 
-
-# =========================
-# Optional placeholder files
-# 如需保留空目录，可提交 .gitkeep
-# =========================
-!picture/training_results/.gitkeep
-
-# Generated model checkpoints
-model/*.pth
-
-# Monte Carlo parameter pools
-truth_pool/
-truth_pool_smoke/
-local_models/
-*.dat
-
-# Model checkpoints
+# Model files are ignored by default
 *.pth
 *.pt
 *.ckpt
+local_models/
 
-# Python cache
-__pycache__/
-*.py[cod]
+# Allow the compact final model and its metadata under model/ to be committed.
+# Keep the much larger optimizer checkpoint ignored.
+!model/
+!model/**/
+!model/**/best_model.pth
+!model/**/best_model_info.json
+!model/**/training_summary.json
+model/**/latest_checkpoint.pth

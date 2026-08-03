@@ -1,45 +1,37 @@
-## 反问题
-![alt text](./picture/question.jpg)
+# 反问题重建项目
 
-## 运行环境配置
+本项目同时保留旧实验代码和新的 **1.6 亿五维参数池 Transformer + PINN** 流程。
 
-### 环境依赖
-* python 3.8.2
+## 本次实验请从这里开始
 
-如果觉得 Python 3.8.2 不好下载，那么使用其他版本也行，但是在下载requirements.txt中的依赖时可能版本号会发生冲突或者缺失，按照中断的提示调整一下就行。
+1. 参数池说明与完整操作：`README_160M_PARAMETER_POOL.md`
+2. Transformer + PINN Loss 说明：`README_TRANSFORMER_LOSS_TRAINING.md`
+3. 独立验证说明：`README_MODEL_VALIDATION_ZH.md`
+4. 本次代码审查和修正记录：`FIX_REPORT_160M.md`
 
-## 运行
+## 推荐环境
 
-### 创建虚拟环境(Windows-Python3.8.2)
+固定依赖版本适合 **Python 3.10 或 3.11**：
 
-假设系统中已经安装了`Python 3.8.2`，打开`CMD`，输入以下命令查看python的路径
-```bash
-D:\Users\Administrator\Desktop\111\calc-k>where python
-...
-D:\ProgramEnv\python_3_8_2\python.exe       <- 这就是要找的
-```
-使用`Python 3.8.2`创建虚拟环境
-```bash
-D:\ProgramEnv\python_3_8_2\python.exe -m venv venv
-```
-### 创建虚拟环境(想用系统现有的Python看这个)
-如果懒得使用Python3.8.2，直接使用系统的python，那就直接执行以下命令创建虚拟环境
-```bash
+```powershell
 python -m venv venv
-```
-
-### 在虚拟环境中安装依赖
-激活虚拟环境，并下载Python环境依赖
-```bash
 .\venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-### 执行代码
-执行命令如下
-```bash
-./run.bat cnn load 20
+
+检查 GPU：
+
+```powershell
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
-参数列表如下
-* 第一个参数: cnn/unet，分别表示两种不同的网络
-* 第二个参数: load/train 分别表示加载模型或者直接训练模型
-* 第三个参数: 用来可视化的数据索引数
+
+## 重要入口
+
+- `generate_mc_parameter_pool.py`：生成五维参数池。
+- `check_mc_parameter_pool.py`：检查参数池。
+- `train_mc_parameter_pool_transformer_loss.py`：本次推荐的 Transformer + PINN 训练入口。
+- `train_mc_parameter_pool_day.py`：只保留作纯 MSE 基线，不是 PINN 入口。
+- `validate_mc_transformer.py`：在独立参数池上验证权重。
+
+旧版 `main.py` 仍用于早期 `.npz` 数据实验，不用于本次 1.6 亿参数池训练。

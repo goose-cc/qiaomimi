@@ -1,0 +1,33 @@
+Transformer + Parametric PINN V3 test report
+============================================
+
+Completed checks
+----------------
+1. Python 3.8 syntax parsing for the core model/training/validation files: PASSED
+2. Python compileall: PASSED
+3. All supported curve-loss profiles forward/backward: PASSED
+4. Parametric Transformer forward/backward: PASSED
+5. NumPy/Torch physical target and forward observation cross-check: PASSED
+6. Small independent training and validation parameter pools: PASSED
+7. Parametric PINN streaming training: PASSED
+8. High-accuracy differentiable physics loss: PASSED
+9. Independent fixed validation and validation-selected best_model.pth: PASSED
+10. latest_checkpoint.pth / best_model.pth / JSON outputs: PASSED
+11. Absolute --target-global-step stopping: PASSED
+12. Validation CSV and three images per selected sample: PASSED
+13. Dense-grid resonance metric and resonance plot: PASSED
+14. Checkpoint best_score consistency after final validation: PASSED
+
+Important scope note
+--------------------
+The tests used small parameter pools and a small Transformer to verify code logic.
+The full 160 million-row pool and long-duration final training were not run in
+this environment. Final numerical accuracy must be measured on the user's GPU
+and an independent validation pool.
+
+Physical problem status
+-----------------------
+The rho(s), f(s), g(q^2), parameter ranges, coordinate ranges, scale factor and
+RMS noise definition were not changed. V3 changes only the neural output
+parameterization, loss/evaluation logic, checkpoint selection and numerical
+implementation of the differentiable forward map.

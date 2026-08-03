@@ -1,108 +1,113 @@
-# 1.6 亿五维参数池：低硬盘占用、分块训练版
+# 1.6 亿五维参数池：Transformer + PINN 分块训练
 
-这套脚本放在项目根目录即可运行。它不会覆盖现有的 `main.py`、`config.py`、`PIDataset.py`、`ModelTools.py` 或 `losses.py`。
+## 1. 这次的数据是什么
 
-## 一、为什么只保存五个参数
-
-每条有效真值只保存：
+每条有效样本只在磁盘保存五个 `float32` 参数：
 
 ```text
 a1, a2, a3, m, gamma
 ```
 
-使用 `float32` 时：
+1.6 亿条参数的逻辑大小为：
 
 ```text
-160000000 × 5 × 4 bytes = 3.2 GB
+160000000 × 5 × 4 bytes = 3.2 GB（十进制，约 2.98 GiB）
 ```
 
-不保存全部 `rho(s)`、`u(s)`、`g_clean` 或 `g_noisy`。这些长度为 100 的曲线若全部落盘，会把空间放大到几十或上百 GB；大量重复噪声会进一步达到 TB 级。
-
-训练时才临时执行：
+训练时在线计算：
 
 ```text
-读取连续参数块
-→ 计算 rho(s)
-→ 计算 u(s)=rho(s)/(s+400)^2
-→ 正向积分得到 g_clean
-→ 在线加入 9% RMS 高斯白噪声
-→ 模型训练
-→ 释放活跃缓存
+参数 -> rho(s) -> u_scaled(s) -> g_clean(q²)
+     -> 加 9% RMS 高斯噪声 -> Transformer -> u_pred(s)
 ```
 
-默认训练量使用固定缩放：
+不把 1.6 亿条长度为 100 的曲线全部落盘，因此磁盘占用远低于完整曲线数据集。
 
-```text
-u_scaled = 160000 × u
-g_scaled = 160000 × g
-```
+## 2. 物理定义
 
-这不会改变积分关系，只是避免原始数值过小导致 MSE 训练接近零解。
-
-## 二、参数和物理筛选
-
-连续均匀蒙特卡洛范围：
+参数范围：
 
 ```text
 a1 ∈ [0, 0.2]
 a2 ∈ [0, 0.05]
 a3 ∈ [-0.05, 0.05]
 m  ∈ (0, 2]
-Γ  ∈ (0, 1]
+gamma ∈ (0, 1]
 ```
 
 谱函数：
 
 ```text
-rho(s) =
-a1/pi × (mΓ)/((s-m)^2+(mΓ)^2)
-+ a2*s + a3
+rho(s) = a1/pi * (m*gamma)/((s-m)^2+(m*gamma)^2) + a2*s + a3
 ```
 
-研究区间：
+网格范围：
 
 ```text
-s ∈ [0.1764, 6]
+s  ∈ [0.1764, 6]
 q² ∈ [-100, -6]
 ```
 
-候选参数只要在连续研究区间中出现 `rho(s)<0` 就会被剔除。检查不是只看 100 个网格点，而是根据该谱函数导数定位可能的内部局部最小值，再与两端点一起判断。
-
-## 三、新增文件
+目标与观测：
 
 ```text
-mc_pool_config.py
-mc_physics.py
-generate_mc_parameter_pool.py
-check_mc_parameter_pool.py
-train_mc_parameter_pool_day.py
-README_160M_PARAMETER_POOL.md
-VALIDATION_REPORT.txt
-git_info_exclude_snippet.txt
+u(s) = rho(s)/(s+400)^2
+g(q²) = integral u(s)/(s-q²) ds
 ```
 
-- `generate_mc_parameter_pool.py`：建立 `float32` memmap 参数池，支持 `Ctrl+C` 安全停止和 `--resume`。
-- `check_mc_parameter_pool.py`：检查文件大小、范围、有限值和连续区间非负性。
-- `train_mc_parameter_pool_day.py`：分块计算曲线、在线加噪、按时间停止并保存恢复位置。
-- `mc_physics.py`：谱函数、连续非负性检查、固定缩放和稳定正向积分。
-- `mc_pool_config.py`：集中保存范围、网格、噪声和缩放常数。
+训练采用相同固定缩放：
 
-训练脚本内置一个可直接运行的 Transformer、CNN 和 1D U-Net。也可以通过 `--model-module` 和 `--model-class` 导入项目现有模型，不需要覆盖项目模型代码。
+```text
+u_scaled = 160000 * u
+g_scaled = 160000 * g
+```
 
-## 四、先做小规模测试
+在线噪声：
 
-PowerShell 多行命令使用反引号 `` ` ``，反引号后不能有空格。
+```text
+g_noisy = g_clean + 0.09 * RMS(g_clean) * N(0,1)
+```
 
-### 1. 生成 10 万条测试参数
+参数生成阶段会剔除在整个研究区间内出现 `rho(s)<0` 的参数。
+
+## 3. 文件职责
+
+```text
+mc_pool_config.py                       集中保存物理常数和 JSON 工具
+mc_physics.py                           参数筛选、曲线和稳定正演
+ generate_mc_parameter_pool.py          生成 memmap 参数池
+check_mc_parameter_pool.py              检查参数池
+mc_inverse_loss.py                      本问题专用 PINN Loss
+train_mc_parameter_pool_transformer_loss.py  推荐训练入口
+train_mc_parameter_pool_day.py          纯 MSE 基线入口
+validate_mc_transformer.py              独立验证
+```
+
+## 4. 必做的 smoke test
+
+### 4.1 Loss 单元测试
+
+```powershell
+python smoke_test_mc_inverse_loss.py
+```
+
+脚本会检查全部 Loss profile 的有限值、反向梯度和完美预测误差，最后应看到：
+
+```text
+all loss profiles passed
+```
+
+### 4.2 生成 1 万条小参数池
 
 ```powershell
 python generate_mc_parameter_pool.py `
   --output-dir ./truth_pool_smoke `
-  --num-truths 100000 `
-  --candidate-batch-size 100000
+  --num-truths 10000 `
+  --candidate-batch-size 50000 `
+  --overwrite
 ```
 
-### 2. 检查参数池
+### 4.3 检查参数池
 
 ```powershell
 python check_mc_parameter_pool.py `
@@ -111,23 +116,46 @@ python check_mc_parameter_pool.py `
   --require-complete
 ```
 
-### 3. 做 100 步训练测试
+应看到 `CHECK PASSED`。
+
+### 4.4 跑 100 步 Transformer + PINN
 
 ```powershell
-python train_mc_parameter_pool_day.py `
+python train_mc_parameter_pool_transformer_loss.py `
   --pool-dir ./truth_pool_smoke `
-  --checkpoint-dir ./local_models/mc_pool_smoke `
+  --checkpoint-dir ./model/mc_transformer_pinn_smoke `
   --model-type transformer `
-  --active-block-size 20000 `
+  --active-block-size 10000 `
   --precompute-chunk-size 1000 `
-  --integration-points 64 `
+  --integration-points 128 `
   --batch-size 32 `
+  --loss-profile pinn `
+  --loss-normalization relative `
+  --physics-target clean `
+  --lambda-grad 0.1 `
+  --lambda-physics 0.1 `
+  --learning-rate 1e-3 `
+  --weight-decay 1e-5 `
   --max-hours 0.1 `
   --max-steps 100 `
-  --fresh
+  --log-every-steps 10 `
+  --checkpoint-every-steps 50 `
+  --amp `
+  --fresh `
+  --require-complete-pool
 ```
 
-## 五、正式生成 1.6 亿参数
+CPU 测试时删掉 `--amp`，并可把 `--batch-size` 改成 8。
+
+日志应包含：
+
+```text
+loss=... data=... grad=... phys=...
+```
+
+## 5. 正式生成 1.6 亿参数
+
+首次生成：
 
 ```powershell
 python generate_mc_parameter_pool.py `
@@ -136,7 +164,7 @@ python generate_mc_parameter_pool.py `
   --candidate-batch-size 1000000
 ```
 
-按 `Ctrl+C` 后程序会在当前候选批结束时保存。继续：
+按 `Ctrl+C` 后会在当前候选批结束时保存。继续：
 
 ```powershell
 python generate_mc_parameter_pool.py `
@@ -146,117 +174,93 @@ python generate_mc_parameter_pool.py `
   --resume
 ```
 
-参数文件会按最终目标预分配，逻辑大小约为 3.2 GB。正式生成前请确保磁盘剩余空间明显高于 4 GB。
-
-## 六、每天最多训练 23 小时
+完成后检查：
 
 ```powershell
-python train_mc_parameter_pool_day.py `
+python check_mc_parameter_pool.py `
   --pool-dir ./truth_pool `
-  --checkpoint-dir ./local_models/mc_pool `
+  --sample-size 100000 `
+  --require-complete
+```
+
+建议预留至少 6 GB 空间，避免临时文件、检查点和文件系统开销导致空间不足。
+
+## 6. 正式 Transformer + PINN 训练
+
+```powershell
+python train_mc_parameter_pool_transformer_loss.py `
+  --pool-dir ./truth_pool `
+  --checkpoint-dir ./model/mc_transformer_pinn `
   --model-type transformer `
   --active-block-size 200000 `
   --precompute-chunk-size 4096 `
   --integration-points 128 `
   --batch-size 64 `
+  --loss-profile pinn `
+  --loss-normalization relative `
+  --physics-target clean `
+  --lambda-grad 0.1 `
+  --lambda-physics 0.1 `
+  --learning-rate 1e-3 `
+  --weight-decay 1e-5 `
   --max-hours 23 `
   --checkpoint-every-steps 2000 `
-  --fresh
+  --log-every-steps 100 `
+  --amp `
+  --fresh `
+  --require-complete-pool
 ```
 
-第二天继续时参数保持相同，并改为：
+`active-block-size=200000` 只是每次读入内存的参数块，不代表只训练 20 万条。
+
+第二天继续时使用同一条命令，仅把 `--fresh` 改为 `--resume`。修正版会核对模型、物理网格、Loss、学习率、batch size 和参数池，避免误把不同实验接在同一个 checkpoint 上。
+
+## 7. 输出文件
+
+```text
+model/mc_transformer_pinn/
+  latest_checkpoint.pth   完整断点：模型、优化器、随机状态、训练位置
+  best_model.pth          纯模型 state_dict
+  best_model_info.json    模型和 best score 信息
+  training_summary.json   本次运行汇总
+```
+
+当前 `best_model.pth` 是按滚动训练 Loss 选择的，不是按独立验证集选择的。正式汇报必须另外做固定验证。
+
+## 8. 建立独立验证池
 
 ```powershell
-python train_mc_parameter_pool_day.py `
-  --pool-dir ./truth_pool `
-  --checkpoint-dir ./local_models/mc_pool `
-  --model-type transformer `
-  --active-block-size 200000 `
-  --precompute-chunk-size 4096 `
-  --integration-points 128 `
-  --batch-size 64 `
-  --max-hours 23 `
-  --checkpoint-every-steps 2000 `
-  --resume
+python generate_mc_parameter_pool.py `
+  --output-dir ./truth_pool_val_10k `
+  --num-truths 10000 `
+  --candidate-batch-size 100000 `
+  --seed 20260802
 ```
 
-检查点保存：
+然后参考 `README_MODEL_VALIDATION_ZH.md` 验证。验证池不能参与训练。
 
-```text
-next_parameter_id
-pool_cycle
-global_step
-samples_seen
-模型权重
-优化器状态
-Python / NumPy / PyTorch 随机状态
-```
+## 9. clean 与 discrete-clean
 
-所以不会从参数池开头重新训练。参数池全部覆盖后，`pool_cycle` 增加，同一参数会获得新的在线噪声。
+- `--physics-target clean`：物理项对齐高精度连续正演，默认推荐。
+- `--physics-target discrete-clean`：物理项对齐 `100` 点真值经过离散矩阵后的观测。
 
-## 七、使用项目已有模型
+当 `m*gamma` 极小时，100 点输出可能无法表示窄峰，但高精度 `g_clean` 仍能看到它。这时两种目标会发生表示冲突，应通过独立验证中的 `clean_discrete_representation_gap` 判断，而不是盲目增大物理 Loss 权重。
 
-假设项目根目录存在：
+## 10. Git 权重上传
 
-```python
-# my_models.py
-class MyTransformer(torch.nn.Module):
-    ...
-```
+`.gitignore` 已设置为：
 
-可以运行：
+- 忽略参数池和完整 `latest_checkpoint.pth`；
+- 允许提交 `model/**/best_model.pth`、`best_model_info.json` 和 `training_summary.json`。
+
+训练后执行：
 
 ```powershell
-python train_mc_parameter_pool_day.py `
-  --pool-dir ./truth_pool_smoke `
-  --checkpoint-dir ./local_models/project_model_smoke `
-  --model-module my_models `
-  --model-class MyTransformer `
-  --model-kwargs-json '{"input_size":100,"output_size":100}' `
-  --input-layout auto `
-  --max-steps 10 `
-  --max-hours 0.1 `
-  --fresh
+git add model/mc_transformer_pinn/best_model.pth
+git add model/mc_transformer_pinn/best_model_info.json
+git add model/mc_transformer_pinn/training_summary.json
+git commit -m "Add 160M Transformer PINN model"
+git push
 ```
 
-若模型只接受 `[B,1,100]`，使用：
-
-```text
---input-layout B1L
-```
-
-若接受 `[B,100]`，使用：
-
-```text
---input-layout BL
-```
-
-## 八、完整覆盖时间
-
-脚本结束时会根据本机端到端实测吞吐打印：
-
-```text
-estimated time to cover all 160000000 available parameters: ... h
-```
-
-估算包含参数读取、物理计算、积分、加噪、前向、反向和更新，因此比只计算模型前向更可信。
-
-## 九、重要数值说明
-
-理论范围只要求 `m>0`、`Gamma>0`。当 `m*Gamma` 极小时，共振峰可能比 100 点输出网格窄得多。脚本的正向积分使用：
-
-```text
-z = atan((s-m)/(m*Gamma))
-```
-
-处理窄峰，因此观测积分不会简单漏掉峰；但任何固定 100 点的点值标签都无法严格解析宽度趋近于零的连续峰。若后续必须精确恢复极窄峰，应考虑让网络输出五个参数、分箱积分或自适应表示。
-
-## 十、依赖
-
-```text
-Python 3.10+
-numpy
-torch
-```
-
-只生成和检查参数池时不需要 PyTorch；训练脚本需要 PyTorch。
+权重过大时应使用 Git LFS。
