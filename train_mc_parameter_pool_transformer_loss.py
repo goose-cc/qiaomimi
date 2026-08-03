@@ -41,7 +41,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 4
+SCRIPT_VERSION = 5
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -100,9 +100,13 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "base", "mse_grad", "huber_grad", "pinn",
             "pinn_smooth", "pinn_tikhonov", "pinn_huber", "pinn_full",
+            "peak_grad", "peak_pinn",
         ),
-        default="pinn",
-        help="组合损失类型；推荐先用 pinn",
+        default="peak_grad",
+        help=(
+            "组合损失类型；peak_grad=完整谱+梯度+峰加权+共振监督，"
+            "peak_pinn 在此基础上加入弱物理项"
+        ),
     )
     parser.add_argument(
         "--loss-normalization",
@@ -119,13 +123,61 @@ def parse_args() -> argparse.Namespace:
             "noisy=网络输入；discrete-clean=由100点真值再做梯形积分"
         ),
     )
-    parser.add_argument("--lambda-grad", type=float, default=0.1)
-    parser.add_argument("--lambda-physics", type=float, default=0.1)
+    parser.add_argument("--lambda-grad", type=float, default=0.05)
+    parser.add_argument("--lambda-physics", type=float, default=0.01)
     parser.add_argument("--lambda-smooth", type=float, default=0.0)
     parser.add_argument("--lambda-tv", type=float, default=0.0)
     parser.add_argument("--lambda-tikhonov", type=float, default=0.0)
     parser.add_argument("--huber-beta", type=float, default=0.1)
     parser.add_argument("--loss-eps", type=float, default=1e-8)
+    parser.add_argument("--lambda-peak", type=float, default=0.5)
+    parser.add_argument("--lambda-resonance", type=float, default=0.02)
+    parser.add_argument(
+        "--peak-alpha",
+        type=float,
+        default=5.0,
+        help="完整谱峰区点权重的额外倍率；0 表示不做峰区加权",
+    )
+    parser.add_argument(
+        "--min-resonance-visibility",
+        type=float,
+        default=0.10,
+        help="只有真实共振 RMS/完整谱 RMS 不低于该值时才计算共振监督",
+    )
+    parser.add_argument(
+        "--min-width-grid-cells",
+        type=float,
+        default=1.0,
+        help="只有 m*gamma 至少覆盖这么多个输出网格时才计算共振监督",
+    )
+    peak_domain = parser.add_mutually_exclusive_group()
+    peak_domain.add_argument(
+        "--peak-in-domain-only",
+        dest="peak_in_domain_only",
+        action="store_true",
+        help="仅对 m 位于 s 区间内的样本使用共振监督",
+    )
+    peak_domain.add_argument(
+        "--allow-outside-domain-peak-loss",
+        dest="peak_in_domain_only",
+        action="store_false",
+        help="也对峰中心位于 s 区间外的样本使用共振监督（不推荐）",
+    )
+    parser.set_defaults(peak_in_domain_only=True)
+
+    # 噪声课程：最终物理问题仍是 --noise-level，只改变训练前期难度。
+    parser.add_argument(
+        "--noise-start-level",
+        type=float,
+        default=None,
+        help="课程训练起始噪声；不指定时等于 noise-level",
+    )
+    parser.add_argument(
+        "--noise-curriculum-steps",
+        type=int,
+        default=0,
+        help="在这么多全局步内从 noise-start-level 线性升至 noise-level；0 表示关闭",
+    )
 
     # 与原项目 Transformer 默认设置保持一致
     parser.add_argument("--transformer-d-model", type=int, default=64)
@@ -175,7 +227,13 @@ def parse_args() -> argparse.Namespace:
         "--max-steps",
         type=int,
         default=0,
-        help="0 表示不限制训练步数，只按 max-hours 停止",
+        help="本次启动最多新增多少步；0 表示不按新增步数限制",
+    )
+    parser.add_argument(
+        "--target-global-step",
+        type=int,
+        default=0,
+        help="绝对总步数目标；例如已有10000步、填20000只再训练到20000",
     )
     parser.add_argument("--checkpoint-every-steps", type=int, default=2000)
     parser.add_argument("--log-every-steps", type=int, default=100)
@@ -242,8 +300,9 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.transformer_rms_eps <= 0:
         raise ValueError("--transformer-rms-eps 必须大于 0")
     for name in (
-        "lambda_grad", "lambda_physics", "lambda_smooth",
-        "lambda_tv", "lambda_tikhonov",
+        "lambda_grad", "lambda_physics", "lambda_peak", "lambda_resonance",
+        "peak_alpha", "min_resonance_visibility", "min_width_grid_cells",
+        "lambda_smooth", "lambda_tv", "lambda_tikhonov",
     ):
         if getattr(args, name) < 0:
             raise ValueError(f"--{name.replace('_', '-')} 不能为负数")
@@ -251,6 +310,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--huber-beta 必须大于 0")
     if args.loss_eps <= 0:
         raise ValueError("--loss-eps 必须大于 0")
+    if args.noise_start_level is not None and args.noise_start_level < 0:
+        raise ValueError("--noise-start-level 不能为负数")
+    if args.noise_curriculum_steps < 0:
+        raise ValueError("--noise-curriculum-steps 不能为负数")
+    if args.target_global_step < 0:
+        raise ValueError("--target-global-step 不能为负数")
 
 
 def choose_device(name: str) -> torch.device:
@@ -615,16 +680,17 @@ class OnlinePhysics:
             g_clean_scaled.to(self.model_dtype),
         )
 
-    def add_noise(self, g_clean_scaled: torch.Tensor) -> torch.Tensor:
+    def add_noise(
+        self,
+        g_clean_scaled: torch.Tensor,
+        noise_level: Optional[float] = None,
+    ) -> torch.Tensor:
+        level = self.noise_level if noise_level is None else float(noise_level)
         rms = torch.sqrt(
             torch.mean(g_clean_scaled.square(), dim=1, keepdim=True)
             + 1e-24
         )
-        noise = (
-            self.noise_level
-            * rms
-            * torch.randn_like(g_clean_scaled)
-        )
+        noise = level * rms * torch.randn_like(g_clean_scaled)
         return g_clean_scaled + noise
 
 
@@ -844,6 +910,9 @@ def validate_resume_compatibility(
         "data_scale", "noise_level", "integration_points",
         "physics_dtype", "loss_profile", "loss_normalization",
         "physics_target", "lambda_grad", "lambda_physics",
+        "lambda_peak", "lambda_resonance", "peak_alpha",
+        "min_resonance_visibility", "min_width_grid_cells",
+        "peak_in_domain_only", "noise_start_level", "noise_curriculum_steps",
         "lambda_smooth", "lambda_tv", "lambda_tikhonov",
         "huber_beta", "loss_eps", "learning_rate", "weight_decay",
         "grad_clip", "batch_size", "amp",
@@ -888,6 +957,17 @@ def validate_resume_compatibility(
         )
 
 
+def current_training_noise(args: argparse.Namespace, global_step: int) -> float:
+    """Return curriculum noise without changing the final requested noise model."""
+    target = float(args.noise_level)
+    start = target if args.noise_start_level is None else float(args.noise_start_level)
+    steps = int(args.noise_curriculum_steps)
+    if steps <= 0 or global_step >= steps:
+        return target
+    progress = max(0.0, min(1.0, float(global_step) / float(steps)))
+    return start + (target - start) * progress
+
+
 def should_stop(
     *,
     args: argparse.Namespace,
@@ -899,9 +979,12 @@ def should_stop(
     if args.max_hours > 0 and elapsed_hours >= args.max_hours:
         return f"达到最大运行时间 {args.max_hours} 小时"
 
+    if args.target_global_step > 0 and global_step >= args.target_global_step:
+        return f"达到绝对总步数 {args.target_global_step}"
+
     run_steps = global_step - start_global_step
     if args.max_steps > 0 and run_steps >= args.max_steps:
-        return f"达到本次最大步数 {args.max_steps}"
+        return f"达到本次新增最大步数 {args.max_steps}"
     return None
 
 
@@ -968,6 +1051,14 @@ def train(args: argparse.Namespace) -> None:
         normalization=args.loss_normalization,
         lambda_grad=args.lambda_grad,
         lambda_physics=args.lambda_physics,
+        lambda_peak=args.lambda_peak,
+        lambda_resonance=args.lambda_resonance,
+        peak_alpha=args.peak_alpha,
+        min_resonance_visibility=args.min_resonance_visibility,
+        min_width_grid_cells=args.min_width_grid_cells,
+        peak_in_domain_only=args.peak_in_domain_only,
+        data_scale=args.data_scale,
+        shift=args.shift,
         lambda_smooth=args.lambda_smooth,
         lambda_tv=args.lambda_tv,
         lambda_tikhonov=args.lambda_tikhonov,
@@ -1031,7 +1122,12 @@ def train(args: argparse.Namespace) -> None:
 
     print("=" * 72)
     print("开始训练")
-    print(f"noise_level: {args.noise_level:.2%} RMS Gaussian")
+    print(f"noise_level(final): {args.noise_level:.2%} RMS Gaussian")
+    print(
+        "noise curriculum: "
+        f"start={args.noise_start_level if args.noise_start_level is not None else args.noise_level:.4f}, "
+        f"steps={args.noise_curriculum_steps}"
+    )
     print(f"data_scale: {args.data_scale:g}")
     print(f"batch_size: {args.batch_size}")
     print(f"active_block_size: {args.active_block_size:,}")
@@ -1056,11 +1152,13 @@ def train(args: argparse.Namespace) -> None:
     print(
         "loss weights: "
         f"grad={args.lambda_grad:g}, physics={args.lambda_physics:g}, "
-        f"smooth={args.lambda_smooth:g}, tv={args.lambda_tv:g}, "
-        f"tikhonov={args.lambda_tikhonov:g}"
+        f"peak={args.lambda_peak:g}, resonance={args.lambda_resonance:g}, "
+        f"peak_alpha={args.peak_alpha:g}, smooth={args.lambda_smooth:g}, "
+        f"tv={args.lambda_tv:g}, tikhonov={args.lambda_tikhonov:g}"
     )
     print(f"max_hours: {args.max_hours}")
-    print(f"max_steps: {args.max_steps if args.max_steps > 0 else 'unlimited'}")
+    print(f"max_steps(new this run): {args.max_steps if args.max_steps > 0 else 'unlimited'}")
+    print(f"target_global_step: {args.target_global_step if args.target_global_step > 0 else 'disabled'}")
     print("=" * 72)
 
     try:
@@ -1102,14 +1200,13 @@ def train(args: argparse.Namespace) -> None:
                     block_size,
                 )
                 chunk_np = block[block_offset:chunk_end]
-                params = torch.from_numpy(chunk_np).to(
+                params_chunk = torch.from_numpy(chunk_np).to(
                     device=device,
                     dtype=torch.float32,
                     non_blocking=(device.type == "cuda"),
                 )
 
-                target_scaled, g_clean_scaled = physics.make_clean_batch(params)
-                del params
+                target_scaled, g_clean_scaled = physics.make_clean_batch(params_chunk)
 
                 local_offset = 0
                 chunk_size = chunk_end - block_offset
@@ -1132,7 +1229,11 @@ def train(args: argparse.Namespace) -> None:
 
                     target = target_scaled[local_offset:batch_end].unsqueeze(1)
                     g_clean = g_clean_scaled[local_offset:batch_end]
-                    g_noisy = physics.add_noise(g_clean).unsqueeze(1)
+                    params_batch = params_chunk[local_offset:batch_end]
+                    train_noise = current_training_noise(args, global_step)
+                    g_noisy = physics.add_noise(
+                        g_clean, noise_level=train_noise
+                    ).unsqueeze(1)
 
                     optimizer.zero_grad(set_to_none=True)
 
@@ -1150,7 +1251,10 @@ def train(args: argparse.Namespace) -> None:
                             # 与100点 f_true 完全离散一致，适合极窄峰标签不可解析时。
                             g_reference = criterion.physics_forward_integral(target)
                         loss, loss_logs = criterion(
-                            prediction, target, g_reference
+                            prediction,
+                            target,
+                            g_reference,
+                            params=params_batch,
                         )
 
                     if not torch.isfinite(loss):
@@ -1209,7 +1313,11 @@ def train(args: argparse.Namespace) -> None:
                             f"loss={loss_value:.6e} "
                             f"data={loss_logs['data_mse']:.3e} "
                             f"grad={loss_logs['grad']:.3e} "
+                            f"peak={loss_logs['peak_weighted']:.3e} "
+                            f"res={loss_logs['resonance']:.3e} "
+                            f"eligible={loss_logs['eligible_fraction']:.2f} "
                             f"phys={loss_logs['physics']:.3e} "
+                            f"noise={train_noise:.3f} "
                             f"rolling={rolling_score:.6e} "
                             f"throughput={throughput:,.1f} samples/s"
                         )
@@ -1237,7 +1345,7 @@ def train(args: argparse.Namespace) -> None:
                         atomic_torch_save(checkpoint, latest_path)
                         print(f"已保存 latest checkpoint: {latest_path}")
 
-                del target_scaled, g_clean_scaled
+                del target_scaled, g_clean_scaled, params_chunk
                 block_offset = chunk_end
 
     except KeyboardInterrupt:

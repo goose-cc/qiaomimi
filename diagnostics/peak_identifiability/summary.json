@@ -1,0 +1,49 @@
+{
+  "pool": "C:\\Users\\22825\\Desktop\\DC\\qiaomimi\\truth_pool_val_10k",
+  "sample_count": 5000,
+  "noise_level_reference": 0.09,
+  "ambiguous_pair_definition": "clean g relative L2 difference <= noise_level; nearest-neighbor candidates only",
+  "ambiguous_pairs_found": 100,
+  "largest_f_difference_pair": {
+    "row_i": 8279,
+    "row_j": 8862,
+    "g_relative_difference": 0.01395332533866167,
+    "f_relative_difference": 35.21349334716797,
+    "m_difference": 0.3778373599052429,
+    "gamma_difference": 0.7815113067626953,
+    "width_i": 0.4366503059864044,
+    "width_j": 0.001107721240259707,
+    "a1_i": 0.17373470962047577,
+    "a1_j": 0.17896613478660583
+  },
+  "width_stats": [
+    {
+      "left": 0.0,
+      "right": 0.1,
+      "count": 951,
+      "visibility_mean": 0.38365725927920336
+    },
+    {
+      "left": 0.1,
+      "right": 0.2,
+      "count": 647,
+      "visibility_mean": 0.38161618895795474
+    },
+    {
+      "left": 0.2,
+      "right": 0.5,
+      "count": 1357,
+      "visibility_mean": 0.32113583935402573
+    },
+    {
+      "left": 0.5,
+      "right": null,
+      "count": 2045,
+      "visibility_mean": 0.21406397905875016
+    }
+  ],
+  "visibility_mean": 0.2970611798017752,
+  "visibility_median": 0.22422898619702367,
+  "clean_to_noisy_relative_mean": 0.08977729082107544,
+  "notes": "This is a diagnostic search, not a mathematical uniqueness proof. Pairs with g differences below the noise level but large f differences are direct evidence of practical ambiguity."
+}

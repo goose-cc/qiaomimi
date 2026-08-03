@@ -1,0 +1,24 @@
+V2.5 peak-corrected test report
+================================
+
+Passed:
+- Python compileall for the project.
+- All old and new loss profiles forward/backward.
+- Perfect physical target gives zero peak-aware losses.
+- NumPy/Torch forward-physics cross-check.
+- Small parameter-pool generation and validation.
+- Three-step CPU Transformer training with peak_grad.
+- Noise curriculum logging.
+- Absolute target_global_step stop at exactly step 3.
+- Checkpoint and best-model saving.
+- Peak-aware validation metrics and CSV output.
+- Width-balanced pool generation.
+- Practical ambiguity diagnostic and CSV output.
+
+Not performed:
+- Long GPU training.
+- Full 160M parameter-pool training.
+- Proof that peak-aware loss improves independent-test peak recovery.
+
+The new code is an experimentally testable correction, not a guarantee that
+narrow peaks are uniquely recoverable from the current physical observation.

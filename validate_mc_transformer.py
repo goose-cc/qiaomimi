@@ -470,6 +470,61 @@ def main() -> None:
         int(saved_args.get("input_points", 100)),
     )
 
+    # Peak-aware diagnostics.  These use the known synthetic a2/a3 background
+    # only for validation; they do not change the model or the physical problem.
+    s_row = s_grid.reshape(1, -1)
+    a1 = params_arr[:, 0:1].astype(np.float64)
+    a2 = params_arr[:, 1:2].astype(np.float64)
+    a3 = params_arr[:, 2:3].astype(np.float64)
+    mass = params_arr[:, 3:4].astype(np.float64)
+    gamma = params_arr[:, 4:5].astype(np.float64)
+    width = mass * gamma
+    shift_value = float(saved_args.get("shift", 400.0))
+    scale_value = float(saved_args.get("data_scale", 160000.0))
+    resonance_true = (
+        scale_value
+        * (a1 / np.pi)
+        * width
+        / ((s_row - mass) ** 2 + width**2)
+        / (s_row + shift_value) ** 2
+    )
+    background_true = (
+        scale_value * (a2 * s_row + a3) / (s_row + shift_value) ** 2
+    )
+    resonance_pred_diag = f_pred_arr.astype(np.float64) - background_true
+    resonance_error = resonance_pred_diag - resonance_true
+    resonance_mse_scaled = np.mean(resonance_error**2, axis=1)
+    resonance_rmse_scaled = np.sqrt(resonance_mse_scaled)
+    resonance_relative_l2 = (
+        np.linalg.norm(resonance_error, axis=1)
+        / np.maximum(np.linalg.norm(resonance_true, axis=1), 1e-12)
+    )
+    resonance_visibility = (
+        np.linalg.norm(resonance_true, axis=1)
+        / np.maximum(np.linalg.norm(f_true_arr.astype(np.float64), axis=1), 1e-12)
+    )
+    ds = float((s_grid[-1] - s_grid[0]) / max(1, len(s_grid) - 1))
+    width_grid_cells = width[:, 0] / ds
+    resonance_true_idx = np.argmax(resonance_true, axis=1)
+    resonance_pred_idx = np.argmax(resonance_pred_diag, axis=1)
+    resonance_true_s = s_grid[resonance_true_idx]
+    resonance_pred_s = s_grid[resonance_pred_idx]
+    resonance_center_error = np.abs(resonance_pred_s - resonance_true_s)
+    true_res_height = resonance_true[np.arange(sample_count), resonance_true_idx]
+    pred_res_at_true = resonance_pred_diag[np.arange(sample_count), resonance_true_idx]
+    resonance_height_relative_error = (
+        np.abs(pred_res_at_true - true_res_height)
+        / np.maximum(np.abs(true_res_height), 1e-12)
+    )
+    visible_peak_mask = (
+        (params_arr[:, 3] >= s_grid[0])
+        & (params_arr[:, 3] <= s_grid[-1])
+        & (resonance_visibility >= 0.10)
+        & (width_grid_cells >= 1.0)
+    )
+
+    # Legacy complete-spectrum argmax metrics are kept for backward compatibility,
+    # but they are not the physical resonance-center metric.
     true_peak_idx = np.argmax(f_true_arr, axis=1)
     pred_peak_idx = np.argmax(f_pred_arr, axis=1)
     true_peak_s = s_grid[true_peak_idx]
@@ -492,6 +547,16 @@ def main() -> None:
         "validation_row_id",
         *PARAMETER_NAMES,
         "m_gamma",
+        "resonance_visibility",
+        "width_grid_cells",
+        "visible_peak_eligible",
+        "resonance_mse_scaled",
+        "resonance_rmse_scaled",
+        "resonance_relative_l2",
+        "resonance_true_peak_s",
+        "resonance_pred_peak_s_diag",
+        "resonance_center_error",
+        "resonance_height_relative_error",
         "f_mse_scaled",
         "f_rmse_scaled",
         "f_mse_original",
@@ -529,6 +594,16 @@ def main() -> None:
                 "m": float(params_arr[i, 3]),
                 "gamma": float(params_arr[i, 4]),
                 "m_gamma": float(params_arr[i, 3] * params_arr[i, 4]),
+                "resonance_visibility": float(resonance_visibility[i]),
+                "width_grid_cells": float(width_grid_cells[i]),
+                "visible_peak_eligible": bool(visible_peak_mask[i]),
+                "resonance_mse_scaled": float(resonance_mse_scaled[i]),
+                "resonance_rmse_scaled": float(resonance_rmse_scaled[i]),
+                "resonance_relative_l2": float(resonance_relative_l2[i]),
+                "resonance_true_peak_s": float(resonance_true_s[i]),
+                "resonance_pred_peak_s_diag": float(resonance_pred_s[i]),
+                "resonance_center_error": float(resonance_center_error[i]),
+                "resonance_height_relative_error": float(resonance_height_relative_error[i]),
                 "f_mse_scaled": float(f_mse_scaled[i]),
                 "f_rmse_scaled": float(f_rmse_scaled[i]),
                 "f_mse_original": float(f_mse_original[i]),
@@ -588,6 +663,21 @@ def main() -> None:
         "g_relative_l2_vs_clean": summarize_vector(g_rel_clean),
         "g_relative_l2_vs_discrete_clean": summarize_vector(g_rel_discrete),
         "clean_discrete_representation_gap": summarize_vector(representation_gap),
+        "visible_peak_sample_count": int(np.sum(visible_peak_mask)),
+        "resonance_visibility": summarize_vector(resonance_visibility),
+        "resonance_relative_l2_all": summarize_vector(resonance_relative_l2),
+        "resonance_relative_l2_visible": (
+            summarize_vector(resonance_relative_l2[visible_peak_mask])
+            if np.any(visible_peak_mask) else {}
+        ),
+        "resonance_center_error_visible": (
+            summarize_vector(resonance_center_error[visible_peak_mask])
+            if np.any(visible_peak_mask) else {}
+        ),
+        "resonance_height_relative_error_visible": (
+            summarize_vector(resonance_height_relative_error[visible_peak_mask])
+            if np.any(visible_peak_mask) else {}
+        ),
         "peak_s_error": summarize_vector(peak_s_error),
         "peak_index_error": summarize_vector(peak_index_error),
         "true_argmax_to_m_error": summarize_vector(true_argmax_to_m_error),
@@ -607,8 +697,16 @@ def main() -> None:
                 "f_rmse_scaled / RMS(f_true_scaled)，表示相对重建误差；"
                 "对等长向量，它与 f_relative_l2 数值相同。"
             ),
+            "resonance_metrics": (
+                "resonance_* 使用已知合成参数计算真实背景并从 f_pred 中减去；"
+                "用于验证峰恢复，不适用于没有真值参数的真实未知样本。"
+            ),
+            "visible_peak_eligible": (
+                "默认要求 m 在 s 区间内、共振可见度>=0.10、m*gamma 至少覆盖1个网格。"
+            ),
             "peak_error": (
-                "peak_s_error 是 s 坐标单位的误差；peak_index_error 才是相差的网格点数。"
+                "peak_s_error 是旧的完整谱全局 argmax 指标，不等同于 Lorentz 共振中心；"
+                "物理峰应优先看 resonance_center_error。"
             ),
             "f_relative_l2": "越小越好；比较预测 f 与真实 f。",
             "argmax_to_m_warning": (
@@ -692,7 +790,21 @@ def main() -> None:
     print(f"g vs clean mean      : {summary['g_relative_l2_vs_clean']['mean']:.6g}")
     print(f"g vs discrete mean   : {summary['g_relative_l2_vs_discrete_clean']['mean']:.6g}")
     print(f"representation gap   : {summary['clean_discrete_representation_gap']['mean']:.6g}")
-    print(f"peak s error mean    : {summary['peak_s_error']['mean']:.6g}")
+    print(f"visible peak samples : {summary['visible_peak_sample_count']:,}")
+    if summary['resonance_relative_l2_visible']:
+        print(
+            "resonance rel mean   : "
+            f"{summary['resonance_relative_l2_visible']['mean']:.6g}"
+        )
+        print(
+            "resonance rel median : "
+            f"{summary['resonance_relative_l2_visible']['median']:.6g}"
+        )
+        print(
+            "res center err mean  : "
+            f"{summary['resonance_center_error_visible']['mean']:.6g}"
+        )
+    print(f"legacy peak s mean   : {summary['peak_s_error']['mean']:.6g}")
     print(f"peak index error mean: {summary['peak_index_error']['mean']:.6g} grid points")
     print(f"negative point frac  : {summary['negative_prediction_point_fraction']:.6%}")
     print(f"summary: {summary_path.resolve()}")
