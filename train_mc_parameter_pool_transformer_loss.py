@@ -11,8 +11,9 @@
 2. 本文件不定义任何 BuiltinTransformer / BuiltinCNN / BuiltinUNet。
 3. 原项目模型导入失败时立即停止，不做静默回退。
 4. 每次启动都会打印模型类、模块、源码文件和参数量。
-5. 从 parameters.dat 顺序读取五维参数：
-   [a1, a2, a3, m, gamma]
+5. 支持两种参数池采样方式：
+   - sequential：按 parameters.dat 顺序读取（原 V2 基线）
+   - random：从整个参数池独立随机采样（本实验默认）
 6. 在线计算 rho(s)、u(s)、稳定正向积分和 9% RMS 高斯白噪声。
 7. 使用监督项 + 梯度项 + 物理积分一致性项的可配置组合 loss。
 8. 支持按时间停止、检查点续训和参数池循环覆盖。
@@ -41,7 +42,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 4
+SCRIPT_VERSION = 5
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -73,6 +74,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--active-block-size", type=int, default=200_000)
     parser.add_argument("--precompute-chunk-size", type=int, default=4096)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument(
+        "--sampling-mode",
+        choices=("sequential", "random"),
+        default="random",
+        help=(
+            "参数池取样方式：sequential=按文件顺序读取（原 V2）；"
+            "random=每个预计算块从整个参数池独立随机抽样（本实验）"
+        ),
+    )
     parser.add_argument("--integration-points", type=int, default=512)
     parser.add_argument("--input-points", type=int, default=100)
     parser.add_argument("--output-points", type=int, default=100)
@@ -495,6 +505,39 @@ def open_parameter_pool(
     return pool, metadata, usable_rows
 
 
+def sample_random_parameter_chunk(
+    pool: np.memmap,
+    usable_rows: int,
+    chunk_size: int,
+) -> np.ndarray:
+    """
+    从整个参数池中有放回地独立随机抽取一个参数块。
+
+    为减少超大 memmap 的随机磁盘访问，先按索引排序读取，再恢复原随机顺序。
+    随机数使用 NumPy 全局 RNG；其状态会随 checkpoint 保存和恢复，因此续训可复现。
+    """
+    if usable_rows <= 0:
+        raise ValueError("usable_rows 必须大于 0")
+    if chunk_size <= 0:
+        raise ValueError("chunk_size 必须大于 0")
+
+    random_indices = np.random.randint(
+        low=0,
+        high=usable_rows,
+        size=chunk_size,
+        dtype=np.int64,
+    )
+
+    # 排序仅用于改善 memmap 读取局部性；随后恢复随机抽样产生的原始顺序。
+    read_order = np.argsort(random_indices, kind="stable")
+    sorted_indices = random_indices[read_order]
+    sorted_rows = np.asarray(pool[sorted_indices], dtype=np.float32)
+
+    restore_order = np.empty_like(read_order)
+    restore_order[read_order] = np.arange(chunk_size, dtype=read_order.dtype)
+    return np.array(sorted_rows[restore_order], dtype=np.float32, copy=True)
+
+
 class OnlinePhysics:
     """
     在训练设备上批量计算：
@@ -835,6 +878,7 @@ def validate_resume_compatibility(
         raise RuntimeError("检查点缺少可验证的 args，不能安全续训。请使用 --fresh。")
 
     critical_keys = (
+        "sampling_mode",
         "model_type", "input_points", "output_points",
         "transformer_d_model", "transformer_nhead",
         "transformer_num_layers", "transformer_dim_feedforward",
@@ -851,8 +895,13 @@ def validate_resume_compatibility(
     mismatches = []
     for key in critical_keys:
         if key not in saved_args:
-            continue
-        old = saved_args[key]
+            # V2 旧检查点没有 sampling_mode；其真实含义是 sequential。
+            if key == "sampling_mode":
+                old = "sequential"
+            else:
+                continue
+        else:
+            old = saved_args[key]
         new = getattr(args, key)
         if isinstance(old, float) or isinstance(new, float):
             try:
@@ -1034,6 +1083,12 @@ def train(args: argparse.Namespace) -> None:
     print(f"noise_level: {args.noise_level:.2%} RMS Gaussian")
     print(f"data_scale: {args.data_scale:g}")
     print(f"batch_size: {args.batch_size}")
+    print(f"sampling_mode: {args.sampling_mode}")
+    if args.sampling_mode == "random":
+        print(
+            "随机采样说明: 每个预计算块从整个参数池有放回独立抽样；"
+            "pool_cycle 表示累计抽样数量达到一池等量，并不表示已无重复覆盖全部样本。"
+        )
     print(f"active_block_size: {args.active_block_size:,}")
     print(f"precompute_chunk_size: {args.precompute_chunk_size:,}")
     print(f"integration_points: {args.integration_points}")
@@ -1070,21 +1125,27 @@ def train(args: argparse.Namespace) -> None:
                 pool_cycle += 1
                 print(f"参数池完成一轮，进入 pool_cycle={pool_cycle}")
 
-            block_size = min(
-                args.active_block_size,
-                usable_rows - next_parameter_id,
-            )
-            if block_size <= 0:
-                next_parameter_id = 0
-                pool_cycle += 1
-                continue
+            if args.sampling_mode == "sequential":
+                block_size = min(
+                    args.active_block_size,
+                    usable_rows - next_parameter_id,
+                )
+                if block_size <= 0:
+                    next_parameter_id = 0
+                    pool_cycle += 1
+                    continue
 
-            # 只复制当前活跃块，避免长期持有 memmap 视图。
-            block = np.array(
-                pool[next_parameter_id : next_parameter_id + block_size],
-                dtype=np.float32,
-                copy=True,
-            )
+                # 原 V2：只复制当前连续活跃块，避免长期持有 memmap 视图。
+                block = np.array(
+                    pool[next_parameter_id : next_parameter_id + block_size],
+                    dtype=np.float32,
+                    copy=True,
+                )
+            else:
+                # 随机实验：active_block_size 只控制一次外层循环累计处理多少条，
+                # 实际参数会在每个 precompute chunk 中从整个参数池重新随机抽取。
+                block_size = min(args.active_block_size, usable_rows)
+                block = None
 
             block_offset = 0
             while block_offset < block_size and stop_reason is None:
@@ -1101,7 +1162,18 @@ def train(args: argparse.Namespace) -> None:
                     block_offset + args.precompute_chunk_size,
                     block_size,
                 )
-                chunk_np = block[block_offset:chunk_end]
+                chunk_size = chunk_end - block_offset
+                if args.sampling_mode == "random":
+                    chunk_np = sample_random_parameter_chunk(
+                        pool=pool,
+                        usable_rows=usable_rows,
+                        chunk_size=chunk_size,
+                    )
+                else:
+                    if block is None:
+                        raise RuntimeError("sequential 模式下活跃块未初始化")
+                    chunk_np = block[block_offset:chunk_end]
+
                 params = torch.from_numpy(chunk_np).to(
                     device=device,
                     dtype=torch.float32,
@@ -1112,7 +1184,6 @@ def train(args: argparse.Namespace) -> None:
                 del params
 
                 local_offset = 0
-                chunk_size = chunk_end - block_offset
 
                 while local_offset < chunk_size:
                     stop_reason = should_stop(
@@ -1205,7 +1276,8 @@ def train(args: argparse.Namespace) -> None:
                         print(
                             f"step={global_step:,} "
                             f"cycle={pool_cycle} "
-                            f"next_id={next_parameter_id:,}/{usable_rows:,} "
+                            f"{'sample_progress' if args.sampling_mode == 'random' else 'next_id'}="
+                            f"{next_parameter_id:,}/{usable_rows:,} "
                             f"loss={loss_value:.6e} "
                             f"data={loss_logs['data_mse']:.3e} "
                             f"grad={loss_logs['grad']:.3e} "
@@ -1298,6 +1370,7 @@ def train(args: argparse.Namespace) -> None:
         "estimated_current_pool_hours": float(full_pool_hours),
         "estimated_160m_hours": float(target_160m_hours),
         "pool_usable_rows": int(usable_rows),
+        "sampling_mode": args.sampling_mode,
         "pool_cycle": int(pool_cycle),
         "next_parameter_id": int(next_parameter_id),
         "global_step": int(global_step),
