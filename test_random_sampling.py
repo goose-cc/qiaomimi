@@ -51,6 +51,12 @@ def main() -> None:
         print("RANDOM SAMPLING TEST PASSED")
         print(f"rows={row_count}, chunk_size={chunk_size}")
         print("first 12 sampled row ids:", first[:12, 0].astype(np.int64).tolist())
+        # Windows 不允许删除仍被 np.memmap 占用的文件。
+        # 在TemporaryDirectory 清理前显式关闭底层 mmap 文件句柄。
+        mmap_handle = getattr(pool, "_mmap", None)
+        if mmap_handle is not None:
+            mmap_handle.close()
+        del pool
 
 
 if __name__ == "__main__":

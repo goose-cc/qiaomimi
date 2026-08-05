@@ -7,7 +7,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 POOL_DIR="$1"
-CHECKPOINT_DIR="${2:-./model/v2_exp1_random}"
+CHECKPOINT_DIR="${2:-./model/v2_exp1_shuffle}"
 MODE="${3:-fresh}"
 MAX_STEPS="${4:-0}"
 
@@ -26,7 +26,8 @@ fi
   --pool-dir "$POOL_DIR" \
   --checkpoint-dir "$CHECKPOINT_DIR" \
   --model-type transformer \
-  --sampling-mode random \
+  --sampling-mode shuffle \
+  --shuffle-block-size 200000 \
   --active-block-size 200000 \
   --precompute-chunk-size 4096 \
   --integration-points 128 \

@@ -1,0 +1,13 @@
+{
+  "model_type": "transformer",
+  "model_class": "InverseTransformer1D",
+  "model_module": "TransformerInverse",
+  "model_source_file": "C:\\Users\\22825\\Desktop\\DC\\qiaomimi\\TransformerInverse.py",
+  "model_parameter_count": 256385,
+  "score_definition": "最近若干训练 batch 的平均组合 loss；不是验证集指标",
+  "best_score": 0.22127226449549198,
+  "global_step": 100,
+  "pool_cycle": 0,
+  "next_parameter_id": 6400,
+  "saved_at_local": "2026-08-05 21:37:33"
+}

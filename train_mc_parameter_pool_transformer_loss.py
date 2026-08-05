@@ -11,9 +11,10 @@
 2. 本文件不定义任何 BuiltinTransformer / BuiltinCNN / BuiltinUNet。
 3. 原项目模型导入失败时立即停止，不做静默回退。
 4. 每次启动都会打印模型类、模块、源码文件和参数量。
-5. 支持两种参数池采样方式：
+5. 支持三种参数池采样方式：
    - sequential：按 parameters.dat 顺序读取（原 V2 基线）
-   - random：从整个参数池独立随机采样（本实验默认）
+   - random：从整个参数池有放回独立随机采样
+   - shuffle：先打乱块顺序，再在块内无放回打乱，依次组成 batch（本实验默认）
 6. 在线计算 rho(s)、u(s)、稳定正向积分和 9% RMS 高斯白噪声。
 7. 使用监督项 + 梯度项 + 物理积分一致性项的可配置组合 loss。
 8. 支持按时间停止、检查点续训和参数池循环覆盖。
@@ -42,7 +43,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 5
+SCRIPT_VERSION = 6
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -76,11 +77,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument(
         "--sampling-mode",
-        choices=("sequential", "random"),
-        default="random",
+        choices=("sequential", "random", "shuffle"),
+        default="shuffle",
         help=(
             "参数池取样方式：sequential=按文件顺序读取（原 V2）；"
-            "random=每个预计算块从整个参数池独立随机抽样（本实验）"
+            "random=有放回独立随机抽样；"
+            "shuffle=块顺序打乱 + 块内无放回打乱后依次取样（推荐）"
+        ),
+    )
+    parser.add_argument(
+        "--shuffle-block-size",
+        type=int,
+        default=200_000,
+        help=(
+            "shuffle 模式的块大小。每轮先随机排列所有块，再对当前块内部索引做"
+            "无放回随机排列；内存开销约为 block_size*8 字节。"
         ),
     )
     parser.add_argument("--integration-points", type=int, default=512)
@@ -538,6 +549,177 @@ def sample_random_parameter_chunk(
     return np.array(sorted_rows[restore_order], dtype=np.float32, copy=True)
 
 
+def _derive_sampler_seed(
+    base_seed: int,
+    cycle: int,
+    block_id: int,
+    stream: int,
+) -> int:
+    """为每一轮、每个块生成稳定的 32 位随机种子。"""
+    sequence = np.random.SeedSequence(
+        [
+            int(base_seed) & 0xFFFFFFFF,
+            int(cycle) & 0xFFFFFFFF,
+            int(block_id) & 0xFFFFFFFF,
+            int(stream) & 0xFFFFFFFF,
+        ]
+    )
+    return int(sequence.generate_state(1, dtype=np.uint32)[0])
+
+
+class ShuffledNoReplacementSampler:
+    """
+    面向超大 memmap 参数池的分块无放回打乱采样器。
+
+    每个 pool_cycle：
+    1. 随机排列所有块的访问顺序；
+    2. 进入某个块后，对该块内所有行索引做一次无放回随机排列；
+    3. 按排列后的顺序依次返回 chunk/batch；
+    4. 一轮内每一行恰好使用一次，全部用完后下一轮重新打乱。
+
+    采样顺序由 seed、cycle 和 block_id 确定，因此只需保存
+    pool_cycle 与 next_parameter_id 就能准确续训，不需要把 1.6 亿索引写入检查点。
+    """
+
+    def __init__(
+        self,
+        *,
+        pool: np.memmap,
+        usable_rows: int,
+        block_size: int,
+        seed: int,
+    ) -> None:
+        if usable_rows <= 0:
+            raise ValueError("usable_rows 必须大于 0")
+        if block_size <= 0:
+            raise ValueError("shuffle_block_size 必须大于 0")
+
+        self.pool = pool
+        self.usable_rows = int(usable_rows)
+        self.block_size = int(block_size)
+        self.seed = int(seed)
+        self.num_blocks = (self.usable_rows + self.block_size - 1) // self.block_size
+
+        self._cached_cycle: Optional[int] = None
+        self._cached_block_order: Optional[np.ndarray] = None
+        self._cached_prefix: Optional[np.ndarray] = None
+        self._cached_block_id: Optional[int] = None
+        self._cached_local_permutation: Optional[np.ndarray] = None
+
+    def _block_bounds(self, block_id: int) -> Tuple[int, int]:
+        start = int(block_id) * self.block_size
+        end = min(start + self.block_size, self.usable_rows)
+        return start, end
+
+    def _ensure_cycle_cache(self, cycle: int) -> None:
+        cycle = int(cycle)
+        if self._cached_cycle == cycle:
+            return
+
+        rng = np.random.RandomState(
+            _derive_sampler_seed(self.seed, cycle, 0, 0xB10C)
+        )
+        order = rng.permutation(self.num_blocks).astype(np.int64, copy=False)
+        lengths = np.empty(self.num_blocks, dtype=np.int64)
+        for i, block_id in enumerate(order):
+            start, end = self._block_bounds(int(block_id))
+            lengths[i] = end - start
+
+        self._cached_cycle = cycle
+        self._cached_block_order = order
+        self._cached_prefix = np.cumsum(lengths, dtype=np.int64)
+        self._cached_block_id = None
+        self._cached_local_permutation = None
+
+    def _locate_progress(self, cycle: int, progress: int) -> Tuple[int, int]:
+        self._ensure_cycle_cache(cycle)
+        if not 0 <= progress < self.usable_rows:
+            raise ValueError(
+                f"progress 必须在 [0, {self.usable_rows})，实际为 {progress}"
+            )
+        assert self._cached_block_order is not None
+        assert self._cached_prefix is not None
+
+        order_position = int(
+            np.searchsorted(self._cached_prefix, progress, side="right")
+        )
+        previous_total = (
+            0 if order_position == 0 else int(self._cached_prefix[order_position - 1])
+        )
+        block_id = int(self._cached_block_order[order_position])
+        local_offset = int(progress - previous_total)
+        return block_id, local_offset
+
+    def _local_permutation(self, cycle: int, block_id: int) -> np.ndarray:
+        if (
+            self._cached_cycle == int(cycle)
+            and self._cached_block_id == int(block_id)
+            and self._cached_local_permutation is not None
+        ):
+            return self._cached_local_permutation
+
+        start, end = self._block_bounds(block_id)
+        block_length = end - start
+        rng = np.random.RandomState(
+            _derive_sampler_seed(self.seed, cycle, block_id, 0x10CA1)
+        )
+        permutation = rng.permutation(block_length).astype(np.int64, copy=False)
+        self._cached_block_id = int(block_id)
+        self._cached_local_permutation = permutation
+        return permutation
+
+    @staticmethod
+    def _read_rows(pool: np.memmap, indices: np.ndarray) -> np.ndarray:
+        # 排序只用于提高 memmap 读取局部性，返回前恢复打乱后的训练顺序。
+        read_order = np.argsort(indices, kind="stable")
+        sorted_indices = indices[read_order]
+        sorted_rows = np.asarray(pool[sorted_indices], dtype=np.float32)
+        restore_order = np.empty_like(read_order)
+        restore_order[read_order] = np.arange(
+            indices.size, dtype=read_order.dtype
+        )
+        return np.array(
+            sorted_rows[restore_order], dtype=np.float32, copy=True
+        )
+
+    def sample_chunk(
+        self,
+        *,
+        cycle: int,
+        progress: int,
+        chunk_size: int,
+    ) -> np.ndarray:
+        """返回当前轮中从 progress 开始的无放回随机样本。"""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size 必须大于 0")
+        if progress < 0 or progress >= self.usable_rows:
+            raise ValueError("progress 超出当前轮范围")
+        if progress + chunk_size > self.usable_rows:
+            raise ValueError("chunk 不能跨越 pool_cycle 边界")
+
+        pieces = []
+        cursor = int(progress)
+        remaining = int(chunk_size)
+
+        while remaining > 0:
+            block_id, local_offset = self._locate_progress(cycle, cursor)
+            start, end = self._block_bounds(block_id)
+            local_permutation = self._local_permutation(cycle, block_id)
+            available = (end - start) - local_offset
+            take = min(remaining, available)
+
+            local_indices = local_permutation[local_offset : local_offset + take]
+            global_indices = local_indices + start
+            pieces.append(self._read_rows(self.pool, global_indices))
+
+            cursor += take
+            remaining -= take
+
+        if len(pieces) == 1:
+            return pieces[0]
+        return np.concatenate(pieces, axis=0)
+
+
 class OnlinePhysics:
     """
     在训练设备上批量计算：
@@ -878,7 +1060,7 @@ def validate_resume_compatibility(
         raise RuntimeError("检查点缺少可验证的 args，不能安全续训。请使用 --fresh。")
 
     critical_keys = (
-        "sampling_mode",
+        "sampling_mode", "shuffle_block_size", "seed",
         "model_type", "input_points", "output_points",
         "transformer_d_model", "transformer_nhead",
         "transformer_num_layers", "transformer_dim_feedforward",
@@ -1078,6 +1260,15 @@ def train(args: argparse.Namespace) -> None:
     run_samples = 0
     stop_reason: Optional[str] = None
 
+    shuffle_sampler: Optional[ShuffledNoReplacementSampler] = None
+    if args.sampling_mode == "shuffle":
+        shuffle_sampler = ShuffledNoReplacementSampler(
+            pool=pool,
+            usable_rows=usable_rows,
+            block_size=args.shuffle_block_size,
+            seed=args.seed,
+        )
+
     print("=" * 72)
     print("开始训练")
     print(f"noise_level: {args.noise_level:.2%} RMS Gaussian")
@@ -1087,8 +1278,14 @@ def train(args: argparse.Namespace) -> None:
     if args.sampling_mode == "random":
         print(
             "随机采样说明: 每个预计算块从整个参数池有放回独立抽样；"
-            "pool_cycle 表示累计抽样数量达到一池等量，并不表示已无重复覆盖全部样本。"
+            "pool_cycle 仅表示累计抽样数量达到一池等量。"
         )
+    elif args.sampling_mode == "shuffle":
+        print(
+            "无放回打乱说明: 每轮先打乱块顺序，再打乱块内行顺序；"
+            "每条样本一轮内恰好使用一次，下一轮重新打乱。"
+        )
+        print(f"shuffle_block_size: {args.shuffle_block_size:,}")
     print(f"active_block_size: {args.active_block_size:,}")
     print(f"precompute_chunk_size: {args.precompute_chunk_size:,}")
     print(f"integration_points: {args.integration_points}")
@@ -1141,10 +1338,20 @@ def train(args: argparse.Namespace) -> None:
                     dtype=np.float32,
                     copy=True,
                 )
-            else:
-                # 随机实验：active_block_size 只控制一次外层循环累计处理多少条，
-                # 实际参数会在每个 precompute chunk 中从整个参数池重新随机抽取。
+            elif args.sampling_mode == "random":
+                # 有放回随机模式：active_block_size 只控制一次外层循环处理量。
                 block_size = min(args.active_block_size, usable_rows)
+                block = None
+            else:
+                # 无放回打乱模式：本次外层循环不跨越当前 pool_cycle。
+                block_size = min(
+                    args.active_block_size,
+                    usable_rows - next_parameter_id,
+                )
+                if block_size <= 0:
+                    next_parameter_id = 0
+                    pool_cycle += 1
+                    continue
                 block = None
 
             block_offset = 0
@@ -1167,6 +1374,14 @@ def train(args: argparse.Namespace) -> None:
                     chunk_np = sample_random_parameter_chunk(
                         pool=pool,
                         usable_rows=usable_rows,
+                        chunk_size=chunk_size,
+                    )
+                elif args.sampling_mode == "shuffle":
+                    if shuffle_sampler is None:
+                        raise RuntimeError("shuffle 采样器未初始化")
+                    chunk_np = shuffle_sampler.sample_chunk(
+                        cycle=pool_cycle,
+                        progress=next_parameter_id,
                         chunk_size=chunk_size,
                     )
                 else:
@@ -1276,7 +1491,7 @@ def train(args: argparse.Namespace) -> None:
                         print(
                             f"step={global_step:,} "
                             f"cycle={pool_cycle} "
-                            f"{'sample_progress' if args.sampling_mode == 'random' else 'next_id'}="
+                            f"{'next_id' if args.sampling_mode == 'sequential' else 'sample_progress'}="
                             f"{next_parameter_id:,}/{usable_rows:,} "
                             f"loss={loss_value:.6e} "
                             f"data={loss_logs['data_mse']:.3e} "
