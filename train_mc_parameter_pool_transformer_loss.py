@@ -17,7 +17,8 @@
    - shuffle：先打乱块顺序，再在块内无放回打乱，依次组成 batch（本实验默认）
 6. 在线计算 rho(s)、u(s)、稳定正向积分和 9% RMS 高斯白噪声。
 7. 使用监督项 + 梯度项 + 物理积分一致性项的可配置组合 loss。
-8. 支持按时间停止、检查点续训和参数池循环覆盖。
+8. 支持逻辑 batch 内部微批次反向传播，使 1000 点输出在有限显存下保持有效 batch 不变。
+9. 支持按时间停止、检查点续训和参数池循环覆盖。
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 6
+SCRIPT_VERSION = 7
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -74,7 +75,16 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--active-block-size", type=int, default=200_000)
     parser.add_argument("--precompute-chunk-size", type=int, default=4096)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=64, help="逻辑 batch 大小；每次优化器更新使用的总样本数")
+    parser.add_argument(
+        "--micro-batch-size",
+        type=int,
+        default=0,
+        help=(
+            "逻辑 batch 内部的显存微批次大小；0 表示等于 batch-size。"
+            "提高输出到1000点时可设为1、2或4，梯度会在完整逻辑 batch 内累积后再更新。"
+        ),
+    )
     parser.add_argument(
         "--sampling-mode",
         choices=("sequential", "random", "shuffle"),
@@ -141,6 +151,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--lambda-grad", type=float, default=0.1)
+    parser.add_argument(
+        "--gradient-reference-points",
+        type=int,
+        default=100,
+        help=(
+            "梯度/平滑/TV项的参考网格点数。默认100可使1000点实验中的"
+            "差分正则强度与原100点V2保持同一物理尺度。"
+        ),
+    )
     parser.add_argument("--lambda-physics", type=float, default=0.1)
     parser.add_argument("--lambda-smooth", type=float, default=0.0)
     parser.add_argument("--lambda-tv", type=float, default=0.0)
@@ -237,6 +256,7 @@ def validate_args(args: argparse.Namespace) -> None:
         "active_block_size": args.active_block_size,
         "precompute_chunk_size": args.precompute_chunk_size,
         "batch_size": args.batch_size,
+        "gradient_reference_points": args.gradient_reference_points,
         "integration_points": args.integration_points,
         "input_points": args.input_points,
         "output_points": args.output_points,
@@ -247,6 +267,13 @@ def validate_args(args: argparse.Namespace) -> None:
     for name, value in positive_ints.items():
         if value <= 0:
             raise ValueError(f"--{name.replace('_', '-')} 必须大于 0，当前为 {value}")
+
+    if args.micro_batch_size < 0:
+        raise ValueError("--micro-batch-size 不能为负数")
+    if args.micro_batch_size > args.batch_size:
+        raise ValueError("--micro-batch-size 不能大于 --batch-size")
+    if args.gradient_reference_points < 2:
+        raise ValueError("--gradient-reference-points 必须至少为 2")
 
     if args.max_hours <= 0 and args.max_steps <= 0:
         raise ValueError("--max-hours 和 --max-steps 至少有一个必须大于 0")
@@ -1069,10 +1096,10 @@ def validate_resume_compatibility(
         "s_min", "s_max", "q2_min", "q2_max", "shift",
         "data_scale", "noise_level", "integration_points",
         "physics_dtype", "loss_profile", "loss_normalization",
-        "physics_target", "lambda_grad", "lambda_physics",
+        "physics_target", "lambda_grad", "gradient_reference_points", "lambda_physics",
         "lambda_smooth", "lambda_tv", "lambda_tikhonov",
         "huber_beta", "loss_eps", "learning_rate", "weight_decay",
-        "grad_clip", "batch_size", "amp",
+        "grad_clip", "batch_size", "micro_batch_size", "amp",
     )
     mismatches = []
     for key in critical_keys:
@@ -1198,6 +1225,7 @@ def train(args: argparse.Namespace) -> None:
         profile=args.loss_profile,
         normalization=args.loss_normalization,
         lambda_grad=args.lambda_grad,
+        gradient_reference_points=args.gradient_reference_points,
         lambda_physics=args.lambda_physics,
         lambda_smooth=args.lambda_smooth,
         lambda_tv=args.lambda_tv,
@@ -1273,7 +1301,15 @@ def train(args: argparse.Namespace) -> None:
     print("开始训练")
     print(f"noise_level: {args.noise_level:.2%} RMS Gaussian")
     print(f"data_scale: {args.data_scale:g}")
-    print(f"batch_size: {args.batch_size}")
+    print(f"input_points: {args.input_points}")
+    print(f"output_points: {args.output_points}")
+    print(
+        "output_grid_spacing: "
+        f"{(args.s_max - args.s_min) / max(args.output_points - 1, 1):.8g}"
+    )
+    micro_batch_size = args.batch_size if args.micro_batch_size == 0 else args.micro_batch_size
+    print(f"batch_size (logical): {args.batch_size}")
+    print(f"micro_batch_size: {micro_batch_size}")
     print(f"sampling_mode: {args.sampling_mode}")
     if args.sampling_mode == "random":
         print(
@@ -1307,7 +1343,8 @@ def train(args: argparse.Namespace) -> None:
         )
     print(
         "loss weights: "
-        f"grad={args.lambda_grad:g}, physics={args.lambda_physics:g}, "
+        f"grad={args.lambda_grad:g} (reference_points={args.gradient_reference_points}), "
+        f"physics={args.lambda_physics:g}, "
         f"smooth={args.lambda_smooth:g}, tv={args.lambda_tv:g}, "
         f"tikhonov={args.lambda_tikhonov:g}"
     )
@@ -1418,33 +1455,68 @@ def train(args: argparse.Namespace) -> None:
 
                     target = target_scaled[local_offset:batch_end].unsqueeze(1)
                     g_clean = g_clean_scaled[local_offset:batch_end]
+                    # 对整个逻辑 batch 一次性生成噪声，再按微批次切分。这样只改变显存使用，
+                    # 不改变本步使用的样本、噪声分布或有效 batch 大小。
                     g_noisy = physics.add_noise(g_clean).unsqueeze(1)
 
                     optimizer.zero_grad(set_to_none=True)
+                    micro_size = (
+                        current_batch
+                        if args.micro_batch_size == 0
+                        else min(args.micro_batch_size, current_batch)
+                    )
+                    loss_value = 0.0
+                    loss_logs = {
+                        "total": 0.0,
+                        "data_mse": 0.0,
+                        "data_huber": 0.0,
+                        "grad": 0.0,
+                        "physics": 0.0,
+                        "smooth": 0.0,
+                        "tv": 0.0,
+                        "tikhonov": 0.0,
+                    }
 
-                    with amp_autocast(use_amp):
-                        prediction = model(g_noisy)
-                        prediction = normalize_prediction_shape(
-                            prediction,
-                            target,
-                        )
-                        if args.physics_target == "clean":
-                            g_reference = g_clean.unsqueeze(1)
-                        elif args.physics_target == "noisy":
-                            g_reference = g_noisy
-                        else:
-                            # 与100点 f_true 完全离散一致，适合极窄峰标签不可解析时。
-                            g_reference = criterion.physics_forward_integral(target)
-                        loss, loss_logs = criterion(
-                            prediction, target, g_reference
-                        )
+                    for micro_start in range(0, current_batch, micro_size):
+                        micro_end = min(micro_start + micro_size, current_batch)
+                        micro_count = micro_end - micro_start
+                        micro_weight = float(micro_count) / float(current_batch)
 
-                    if not torch.isfinite(loss):
-                        raise FloatingPointError(
-                            f"global_step={global_step} 的 loss 非有限：{loss.item()}"
-                        )
+                        target_micro = target[micro_start:micro_end]
+                        g_clean_micro = g_clean[micro_start:micro_end]
+                        g_noisy_micro = g_noisy[micro_start:micro_end]
 
-                    scaler.scale(loss).backward()
+                        with amp_autocast(use_amp):
+                            prediction = model(g_noisy_micro)
+                            prediction = normalize_prediction_shape(
+                                prediction,
+                                target_micro,
+                            )
+                            if args.physics_target == "clean":
+                                g_reference = g_clean_micro.unsqueeze(1)
+                            elif args.physics_target == "noisy":
+                                g_reference = g_noisy_micro
+                            else:
+                                # 与当前输出网格上的 f_true 完全离散一致。
+                                g_reference = criterion.physics_forward_integral(target_micro)
+                            micro_loss, micro_logs = criterion(
+                                prediction, target_micro, g_reference
+                            )
+
+                        if not torch.isfinite(micro_loss):
+                            raise FloatingPointError(
+                                f"global_step={global_step} 的 loss 非有限："
+                                f"{micro_loss.item()}"
+                            )
+
+                        # criterion 返回微批次均值；按样本占比加权后，累积梯度等价于
+                        # 对完整逻辑 batch 求均值再反向传播。
+                        scaler.scale(micro_loss * micro_weight).backward()
+                        loss_value += float(micro_loss.detach().cpu().item()) * micro_weight
+                        for key in loss_logs:
+                            loss_logs[key] += float(micro_logs[key]) * micro_weight
+
+                        del prediction, micro_loss, target_micro, g_clean_micro, g_noisy_micro
 
                     if args.grad_clip > 0:
                         scaler.unscale_(optimizer)
@@ -1456,7 +1528,6 @@ def train(args: argparse.Namespace) -> None:
                     scaler.step(optimizer)
                     scaler.update()
 
-                    loss_value = float(loss.detach().cpu().item())
                     loss_window.append(loss_value)
 
                     global_step += 1

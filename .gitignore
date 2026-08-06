@@ -56,3 +56,6 @@ local_models/
 !model/**/best_model_info.json
 !model/**/training_summary.json
 model/**/latest_checkpoint.pth
+model/speed_test_mb*/
+model/v2_exp2_output1000_smoke/
+model/v2_exp2_output1000_160m/

@@ -42,6 +42,7 @@ class MonteCarloInverseLoss(nn.Module):
         profile: str = "pinn",
         normalization: str = "relative",
         lambda_grad: float = 0.1,
+        gradient_reference_points: int = 100,
         lambda_physics: float = 0.1,
         lambda_smooth: float = 0.0,
         lambda_tv: float = 0.0,
@@ -58,10 +59,13 @@ class MonteCarloInverseLoss(nn.Module):
             raise ValueError("output_points must be >=2 and input_points must be >=1")
         if not s_max > s_min:
             raise ValueError("s_max must be greater than s_min")
+        if gradient_reference_points < 2:
+            raise ValueError("gradient_reference_points must be >=2")
 
         self.profile = profile
         self.normalization = normalization
         self.lambda_grad = float(lambda_grad)
+        self.gradient_reference_points = int(gradient_reference_points)
         self.lambda_physics = float(lambda_physics)
         self.lambda_smooth = float(lambda_smooth)
         self.lambda_tv = float(lambda_tv)
@@ -75,6 +79,12 @@ class MonteCarloInverseLoss(nn.Module):
         # Uniform-grid trapezoidal weights.  The physical forward map is
         #     g(q^2) = integral f(s)/(s-q^2) ds.
         ds = (float(s_max) - float(s_min)) / (int(output_points) - 1)
+        reference_ds = (float(s_max) - float(s_min)) / (self.gradient_reference_points - 1)
+        # 原 V2 在100点上直接比较相邻差分。输出改为1000点后，原始差分会
+        # 缩小约10倍、平方损失缩小约100倍。下面把差分换算回参考网格尺度，
+        # 使 lambda_grad 等正则项的物理强度不随输出点数变化；100点时比例恰为1。
+        self.first_difference_scale = float(reference_ds / ds)
+        self.second_difference_scale = float((reference_ds / ds) ** 2)
         trap_weights = torch.full((int(output_points),), ds)
         trap_weights[0] *= 0.5
         trap_weights[-1] *= 0.5
@@ -98,6 +108,14 @@ class MonteCarloInverseLoss(nn.Module):
     @staticmethod
     def second_diff(z: torch.Tensor) -> torch.Tensor:
         return z[..., 2:] - 2.0 * z[..., 1:-1] + z[..., :-2]
+
+    def scaled_first_diff(self, z: torch.Tensor) -> torch.Tensor:
+        """相邻差分，换算到 gradient_reference_points 对应的网格尺度。"""
+        return self.first_diff(z) * self.first_difference_scale
+
+    def scaled_second_diff(self, z: torch.Tensor) -> torch.Tensor:
+        """二阶差分，换算到参考网格尺度。"""
+        return self.second_diff(z) * self.second_difference_scale
 
     def physics_forward_integral(self, f_scaled: torch.Tensor) -> torch.Tensor:
         """Apply the sampled-grid forward operator to f_scaled."""
@@ -164,8 +182,8 @@ class MonteCarloInverseLoss(nn.Module):
             # 用 f_true 的整体 RMS 定标，而不是用一阶差分自身的 RMS。
             # 后者在平坦样本上会接近零，导致 gradient loss 异常放大。
             grad = self._relative_mse(
-                self.first_diff(f_pred),
-                self.first_diff(f_true),
+                self.scaled_first_diff(f_pred),
+                self.scaled_first_diff(f_true),
                 scale_target=f_true,
             )
         else:
@@ -178,11 +196,11 @@ class MonteCarloInverseLoss(nn.Module):
             physics = zero
 
         if use_smooth:
-            d2 = self.second_diff(f_pred)
+            d2 = self.scaled_second_diff(f_pred)
             smooth = torch.mean(d2.square()) if d2.numel() else zero
         else:
             smooth = zero
-        tv = torch.mean(torch.abs(self.first_diff(f_pred))) if use_tv else zero
+        tv = torch.mean(torch.abs(self.scaled_first_diff(f_pred))) if use_tv else zero
         tikhonov = torch.mean(f_pred.square()) if use_tikhonov else zero
 
         if self.profile == "base":
