@@ -4,10 +4,11 @@
 1.6亿蒙特卡洛参数池的分批、限时训练入口。
 
 严格规则：
-1. 只使用原项目中的三个模型类：
+1. 使用项目模型文件中的四个模型类：
    - PINet.PeakInversionCNN
    - UNetLike.UNetLikeModel
    - TransformerInverse.InverseTransformer1D
+   - TransformerInverse.InverseBiLSTMTransformer1D
 2. 本文件不定义任何 BuiltinTransformer / BuiltinCNN / BuiltinUNet。
 3. 原项目模型导入失败时立即停止，不做静默回退。
 4. 每次启动都会打印模型类、模块、源码文件和参数量。
@@ -44,7 +45,7 @@ from mc_inverse_loss import MonteCarloInverseLoss
 from mc_pool_config import DEFAULT_PHYSICS
 
 
-SCRIPT_VERSION = 7
+SCRIPT_VERSION = 8
 PARAMETER_COLUMNS = 5
 PARAMETER_NAMES = ("a1", "a2", "a3", "m", "gamma")
 
@@ -68,9 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", required=True, help="本实验检查点目录")
     parser.add_argument(
         "--model-type",
-        choices=("transformer", "cnn", "unet"),
+        choices=("transformer", "bilstm_transformer", "cnn", "unet"),
         default="transformer",
-        help="只允许选择原项目已有模型",
+        help="选择基线模型或输入端叠加 BiLSTM 的 Transformer",
     )
 
     parser.add_argument("--active-block-size", type=int, default=200_000)
@@ -173,6 +174,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--transformer-num-layers", type=int, default=3)
     parser.add_argument("--transformer-dim-feedforward", type=int, default=128)
     parser.add_argument("--transformer-dropout", type=float, default=0.1)
+
+    # Exp5: 仅在输入端增加双向 LSTM，后续 Transformer 与损失保持不变。
+    parser.add_argument(
+        "--lstm-hidden-size",
+        type=int,
+        default=32,
+        help="BiLSTM 每个方向的隐藏维度；32*2 与默认 d_model=64 对齐",
+    )
+    parser.add_argument("--lstm-num-layers", type=int, default=2)
+    parser.add_argument("--lstm-dropout", type=float, default=0.1)
+    lstm_residual_group = parser.add_mutually_exclusive_group()
+    lstm_residual_group.add_argument(
+        "--lstm-residual",
+        dest="lstm_residual",
+        action="store_true",
+        help="将 BiLSTM 特征与原输入嵌入做残差相加",
+    )
+    lstm_residual_group.add_argument(
+        "--no-lstm-residual",
+        dest="lstm_residual",
+        action="store_false",
+        help="仅使用 BiLSTM 输出，不做输入残差",
+    )
+    parser.set_defaults(lstm_residual=True)
     # Python 3.8 兼容：BooleanOptionalAction 是 Python 3.9 才加入的。
     coord_group = parser.add_mutually_exclusive_group()
     coord_group.add_argument(
@@ -263,6 +288,8 @@ def validate_args(args: argparse.Namespace) -> None:
         "checkpoint_every_steps": args.checkpoint_every_steps,
         "log_every_steps": args.log_every_steps,
         "best_window": args.best_window,
+        "lstm_hidden_size": args.lstm_hidden_size,
+        "lstm_num_layers": args.lstm_num_layers,
     }
     for name, value in positive_ints.items():
         if value <= 0:
@@ -289,6 +316,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("transformer d_model 必须能被 nhead 整除")
     if args.transformer_rms_eps <= 0:
         raise ValueError("--transformer-rms-eps 必须大于 0")
+    if args.lstm_hidden_size <= 0:
+        raise ValueError("--lstm-hidden-size 必须大于 0")
+    if args.lstm_num_layers <= 0:
+        raise ValueError("--lstm-num-layers 必须大于 0")
+    if not (0.0 <= args.lstm_dropout < 1.0):
+        raise ValueError("--lstm-dropout 必须位于 [0, 1) 区间")
     for name in (
         "lambda_grad", "lambda_physics", "lambda_smooth",
         "lambda_tv", "lambda_tikhonov",
@@ -346,15 +379,19 @@ def build_original_project_model(
     """
     expected_class = {
         "transformer": "InverseTransformer1D",
+        "bilstm_transformer": "InverseBiLSTMTransformer1D",
         "cnn": "PeakInversionCNN",
         "unet": "UNetLikeModel",
     }[args.model_type]
 
     try:
-        if args.model_type == "transformer":
-            from TransformerInverse import InverseTransformer1D
+        if args.model_type in ("transformer", "bilstm_transformer"):
+            from TransformerInverse import (
+                InverseBiLSTMTransformer1D,
+                InverseTransformer1D,
+            )
 
-            model = InverseTransformer1D(
+            common_kwargs = dict(
                 input_length=args.input_points,
                 output_length=args.output_points,
                 d_model=args.transformer_d_model,
@@ -372,6 +409,16 @@ def build_original_project_model(
                 rms_normalize_io=args.transformer_rms_normalize_io,
                 rms_eps=args.transformer_rms_eps,
             )
+            if args.model_type == "bilstm_transformer":
+                model = InverseBiLSTMTransformer1D(
+                    **common_kwargs,
+                    lstm_hidden_size=args.lstm_hidden_size,
+                    lstm_num_layers=args.lstm_num_layers,
+                    lstm_dropout=args.lstm_dropout,
+                    lstm_residual=args.lstm_residual,
+                )
+            else:
+                model = InverseTransformer1D(**common_kwargs)
         elif args.model_type == "cnn":
             from PINet import PeakInversionCNN
 
@@ -387,6 +434,7 @@ def build_original_project_model(
     except Exception as exc:
         required_file = {
             "transformer": "TransformerInverse.py",
+            "bilstm_transformer": "TransformerInverse.py",
             "cnn": "PINet.py（以及 ResidualBlock.py）",
             "unet": "UNetLike.py",
         }[args.model_type]
@@ -1093,6 +1141,7 @@ def validate_resume_compatibility(
         "transformer_num_layers", "transformer_dim_feedforward",
         "transformer_dropout", "transformer_normalize_coordinates",
         "transformer_rms_normalize_io", "transformer_rms_eps",
+        "lstm_hidden_size", "lstm_num_layers", "lstm_dropout", "lstm_residual",
         "s_min", "s_max", "q2_min", "q2_max", "shift",
         "data_scale", "noise_level", "integration_points",
         "physics_dtype", "loss_profile", "loss_normalization",
@@ -1333,11 +1382,18 @@ def train(args: argparse.Namespace) -> None:
         f"coordinate_norm={args.transformer_normalize_coordinates}, "
         f"rms_io_norm={args.transformer_rms_normalize_io}"
     )
-    if args.model_type == "transformer" and not args.transformer_normalize_coordinates:
+    if args.model_type == "bilstm_transformer":
+        print(
+            "BiLSTM input encoder: "
+            f"hidden_per_direction={args.lstm_hidden_size}, "
+            f"layers={args.lstm_num_layers}, dropout={args.lstm_dropout:g}, "
+            f"residual={args.lstm_residual}"
+        )
+    if args.model_type in ("transformer", "bilstm_transformer") and not args.transformer_normalize_coordinates:
         print(
             "警告：当前 q2 坐标绝对值很大，关闭坐标归一化会让位置嵌入淹没 g 信号。"
         )
-    if args.model_type == "transformer" and not args.transformer_rms_normalize_io:
+    if args.model_type in ("transformer", "bilstm_transformer") and not args.transformer_rms_normalize_io:
         print(
             "警告：当前 g_scaled 的幅度通常远小于 1，关闭 RMS I/O 归一化容易造成平均曲线塌缩。"
         )

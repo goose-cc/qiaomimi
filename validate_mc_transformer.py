@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from TransformerInverse import InverseTransformer1D
+from TransformerInverse import InverseBiLSTMTransformer1D, InverseTransformer1D
 from mc_inverse_loss import MonteCarloInverseLoss
 from train_mc_parameter_pool_transformer_loss import OnlinePhysics, normalize_prediction_shape
 
@@ -26,7 +26,7 @@ PARAMETER_COLUMNS = 5
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate a trained Transformer on a fixed Monte-Carlo parameter pool.",
+        description="Validate a trained Transformer or BiLSTM+Transformer on a fixed Monte-Carlo parameter pool.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -115,11 +115,14 @@ def open_parameter_pool(pool_dir: Path) -> Tuple[np.memmap, int, Dict[str, Any]]
     return pool, int(usable_rows), metadata
 
 
-def build_model(saved_args: Dict[str, Any], device: torch.device) -> InverseTransformer1D:
-    if saved_args.get("model_type", "transformer") != "transformer":
-        raise RuntimeError("此验证脚本当前只用于 Transformer checkpoint。")
+def build_model(saved_args: Dict[str, Any], device: torch.device) -> torch.nn.Module:
+    model_type = saved_args.get("model_type", "transformer")
+    if model_type not in ("transformer", "bilstm_transformer"):
+        raise RuntimeError(
+            "此验证脚本只用于 Transformer 或 BiLSTM+Transformer checkpoint。"
+        )
 
-    model = InverseTransformer1D(
+    common_kwargs = dict(
         input_length=int(saved_args.get("input_points", 100)),
         output_length=int(saved_args.get("output_points", 100)),
         d_model=int(saved_args.get("transformer_d_model", 64)),
@@ -140,6 +143,16 @@ def build_model(saved_args: Dict[str, Any], device: torch.device) -> InverseTran
         ),
         rms_eps=float(saved_args.get("transformer_rms_eps", 1e-8)),
     )
+    if model_type == "bilstm_transformer":
+        model = InverseBiLSTMTransformer1D(
+            **common_kwargs,
+            lstm_hidden_size=int(saved_args.get("lstm_hidden_size", 32)),
+            lstm_num_layers=int(saved_args.get("lstm_num_layers", 2)),
+            lstm_dropout=float(saved_args.get("lstm_dropout", 0.1)),
+            lstm_residual=bool(saved_args.get("lstm_residual", True)),
+        )
+    else:
+        model = InverseTransformer1D(**common_kwargs)
     return model.to(device)
 
 
