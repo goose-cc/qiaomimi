@@ -236,3 +236,122 @@ class InverseBiLSTMTransformer1D(InverseTransformer1D):
             fx = fx * io_scale
         return fx
 
+class ParametricInverseTransformer1D(nn.Module):
+    """直接从 g(q^2) 预测 5 个物理参数，再由解析物理公式重建 f(s)。
+
+    这是可辨识性诊断模型，不是为了继续堆网络：
+      g(q^2), 100 points -> Transformer encoder -> [a1,a2,a3,m,gamma]
+
+    为了既稳定归一化输入、又不丢失样本整体幅度信息：
+      1. 每条 g 除以自身 RMS；
+      2. log(RMS) 作为额外全局特征送入参数 head。
+    因此输入尺度信息仍然保留。
+    """
+
+    def __init__(
+        self,
+        input_length=100,
+        output_length=1000,
+        d_model=64,
+        nhead=4,
+        num_encoder_layers=3,
+        dim_feedforward=128,
+        dropout=0.1,
+        y_min=-100.0,
+        y_max=-6.0,
+        x_min=0.1764,
+        x_max=6.0,
+        shift=400.0,
+        data_scale=160000.0,
+        rms_eps=1e-8,
+    ):
+        super().__init__()
+        from mc_parametric import parameter_bounds
+
+        self.input_length = int(input_length)
+        self.output_length = int(output_length)
+        self.shift = float(shift)
+        self.data_scale = float(data_scale)
+        self.rms_eps = float(rms_eps)
+        if self.input_length <= 1 or self.output_length <= 1:
+            raise ValueError('input_length and output_length must be > 1')
+        if self.rms_eps <= 0:
+            raise ValueError('rms_eps must be positive')
+        if d_model % nhead != 0:
+            raise ValueError('d_model must be divisible by nhead')
+
+        self.g_value_embed = nn.Linear(1, d_model)
+        self.y_pos_embed = nn.Linear(1, d_model)
+        self.src_norm = nn.LayerNorm(d_model)
+
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True,
+            activation='gelu',
+        )
+        self.encoder = nn.TransformerEncoder(layer, num_layers=num_encoder_layers)
+        self.encoder_norm = nn.LayerNorm(d_model)
+
+        # +1 is log(RMS), so normalization does not destroy absolute-amplitude information.
+        self.parameter_head = nn.Sequential(
+            nn.Linear(d_model + 1, dim_feedforward),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, 5),
+        )
+
+        y_grid = torch.linspace(-1.0, 1.0, self.input_length)
+        s_grid = torch.linspace(float(x_min), float(x_max), self.output_length)
+        lower, upper = parameter_bounds()
+        self.register_buffer('y_grid', y_grid.view(1, self.input_length, 1))
+        self.register_buffer('s_grid', s_grid)
+        self.register_buffer('parameter_lower', lower)
+        self.register_buffer('parameter_upper', upper)
+
+    def predict_parameters(self, gy):
+        if gy.dim() != 3 or gy.shape[1] != 1:
+            raise ValueError(f'Expected gy shape [B, 1, Ny], but got {tuple(gy.shape)}')
+        if gy.shape[2] != self.input_length:
+            raise ValueError(
+                f'Expected input length {self.input_length}, but got {gy.shape[2]}'
+            )
+
+        batch = gy.shape[0]
+        rms = torch.sqrt(
+            torch.mean(gy.square(), dim=2, keepdim=True).clamp_min(self.rms_eps**2)
+        )
+        gy_norm = gy / rms
+        tokens = gy_norm.transpose(1, 2)
+        pos = self.y_grid.expand(batch, -1, -1).to(dtype=tokens.dtype)
+        src = self.src_norm(self.g_value_embed(tokens) + self.y_pos_embed(pos))
+        encoded = self.encoder_norm(self.encoder(src))
+        pooled = encoded.mean(dim=1)
+
+        # Clamp only for numerical safety; RMS itself remains fully represented.
+        log_rms = torch.log(rms[:, 0, 0].clamp_min(self.rms_eps)).unsqueeze(1)
+        logits = self.parameter_head(torch.cat([pooled, log_rms], dim=1))
+        unit = torch.sigmoid(logits)
+        lower = self.parameter_lower.to(dtype=unit.dtype, device=unit.device)
+        upper = self.parameter_upper.to(dtype=unit.dtype, device=unit.device)
+        return lower + unit * (upper - lower)
+
+    def forward_with_parameters(self, gy):
+        from mc_parametric import scaled_spectral_components
+
+        params = self.predict_parameters(gy)
+        total, _, _ = scaled_spectral_components(
+            params,
+            self.s_grid,
+            shift=self.shift,
+            data_scale=self.data_scale,
+        )
+        return total.unsqueeze(1), params
+
+    def forward(self, gy):
+        prediction, _ = self.forward_with_parameters(gy)
+        return prediction
+

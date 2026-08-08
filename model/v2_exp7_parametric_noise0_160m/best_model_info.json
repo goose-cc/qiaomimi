@@ -1,0 +1,8 @@
+{
+  "model_class": "ParametricInverseTransformer1D",
+  "global_step": 25400,
+  "best_score": 0.04775605157017708,
+  "score_definition": "rolling normalized parameter MSE",
+  "noise_level": 0.0,
+  "parameter_weights": "1,1,1,1,1"
+}

@@ -1,0 +1,14 @@
+{
+  "global_step": 30000,
+  "total_samples": 1920000,
+  "best_score": 0.04775605157017708,
+  "stop_reason": "reached max_steps=30000",
+  "noise_level": 0.0,
+  "parameter_target": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma"
+  ]
+}
