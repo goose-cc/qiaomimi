@@ -1,0 +1,15 @@
+{
+  "global_step": 30000,
+  "total_samples": 1920000,
+  "best_score": 3.5268314814567567,
+  "stop_reason": "reached max_steps=30000",
+  "noise_level": 0.0,
+  "target": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "log_gamma"
+  ],
+  "mode": "strong_joint_physics"
+}
