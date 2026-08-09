@@ -1,0 +1,49 @@
+{
+  "mode": "a1",
+  "token_normalization": "global",
+  "global_input_scale": 0.0175,
+  "max_steps": 30000,
+  "elapsed_seconds": 374.591698884964,
+  "best": {
+    "mode": "a1",
+    "description": "a1 in [0.05,0.20]; a2=0.025, a3=0, m=0.8, gamma=0.5",
+    "token_normalization": "global",
+    "global_input_scale": 0.0175,
+    "samples": 10000,
+    "free_parameters": [
+      "a1"
+    ],
+    "normalized_abs_mean": {
+      "a1": 0.004132972294092178,
+      "a2": 0.01133741410970688,
+      "a3": 0.02770132669210434,
+      "m": 0.10329221383333206,
+      "gamma": 0.016004278296232223
+    },
+    "free_parameter_mae_mean": 0.004132972294092178,
+    "f_relative_l2_mean": 0.0020843837551772593,
+    "g_relative_l2_mean": 0.0013368135441094637,
+    "weights": "best"
+  },
+  "latest": {
+    "mode": "a1",
+    "description": "a1 in [0.05,0.20]; a2=0.025, a3=0, m=0.8, gamma=0.5",
+    "token_normalization": "global",
+    "global_input_scale": 0.0175,
+    "samples": 10000,
+    "free_parameters": [
+      "a1"
+    ],
+    "normalized_abs_mean": {
+      "a1": 0.007937479627132416,
+      "a2": 0.01053356575667858,
+      "a3": 0.028566188818216324,
+      "m": 0.10430386999845505,
+      "gamma": 0.016888294991850853
+    },
+    "free_parameter_mae_mean": 0.007937479627132416,
+    "f_relative_l2_mean": 0.0040592368230223655,
+    "g_relative_l2_mean": 0.002618232835829258,
+    "weights": "latest"
+  }
+}

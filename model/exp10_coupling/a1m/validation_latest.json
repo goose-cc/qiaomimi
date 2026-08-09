@@ -1,0 +1,20 @@
+{
+  "mode": "a1m",
+  "description": "a1,m vary; a1 in [0.05,0.2]; gamma=0.5, a2=0.025, a3=0",
+  "samples": 10000,
+  "free_parameters": [
+    "a1",
+    "m"
+  ],
+  "normalized_abs_mean": {
+    "a1": 0.08187938637733459,
+    "a2": 0.007834583243727685,
+    "a3": 0.020485606569051743,
+    "m": 0.1634006109237671,
+    "gamma": 0.01648212589621544
+  },
+  "free_parameter_mae_mean": 0.12263999865055084,
+  "f_relative_l2_mean": 0.1741651102542877,
+  "g_relative_l2_mean": 0.028701207941770553,
+  "weights": "latest"
+}

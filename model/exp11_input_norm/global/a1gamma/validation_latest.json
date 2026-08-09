@@ -1,0 +1,22 @@
+{
+  "mode": "a1gamma",
+  "description": "a1 in [0.05,0.20], gamma varies; m=0.8; background fixed",
+  "token_normalization": "global",
+  "global_input_scale": 0.0175,
+  "samples": 10000,
+  "free_parameters": [
+    "a1",
+    "gamma"
+  ],
+  "normalized_abs_mean": {
+    "a1": 0.05938347598314285,
+    "a2": 0.027077710980176927,
+    "a3": 0.03809442218542099,
+    "m": 0.08406618539094925,
+    "gamma": 0.2848236358165741
+  },
+  "free_parameter_mae_mean": 0.17210355589985848,
+  "f_relative_l2_mean": 0.16443337092399596,
+  "g_relative_l2_mean": 0.012489411717653274,
+  "weights": "latest"
+}
