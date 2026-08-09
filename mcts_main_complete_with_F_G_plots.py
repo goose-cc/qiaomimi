@@ -38,7 +38,7 @@ OUTPUT_DIR = "./mcts_result_selected_m_gamma"
 #
 # 若仍想完全沿用 pick_one_m_not_065.py 的单样本选择方式，
 # 将 SAMPLE_INDICES 改为 None 即可。
-SAMPLE_INDICES: tuple[int, ...] | None = (1708,)# 367, 52)
+SAMPLE_INDICES: tuple[int, ...] | None = (367,)# 367, 52)
 
 
 # ============================================================
@@ -46,7 +46,7 @@ SAMPLE_INDICES: tuple[int, ...] | None = (1708,)# 367, 52)
 # ============================================================
 
 MCTS_ITERATIONS = 4000
-ROLLOUT_DEPTH = 12
+ROLLOUT_DEPTH = 8
 
 SHOW_PLOTS = True
 SEED = 0
@@ -732,24 +732,24 @@ def build_original_v2_mcts(
         iterations=MCTS_ITERATIONS,
         rollout_depth=ROLLOUT_DEPTH,
 
-        lambda_tv=0.0038,
-        lambda_curv=0.00040,
-        lambda_prior=0.022,
-        lambda_mass=0.014,
+        lambda_tv=0.0045,
+        lambda_curv=0.00060,
+        lambda_prior=0.100,
+        lambda_mass=0.025,
 
-        exploration=1.20,
-        max_children=48,
-        progressive_c=2.5,
+        exploration=1.00,
+        max_children=32,
+        progressive_c=2.0,
         progressive_alpha=0.50,
 
         peak_amp_range=(
-            0.00003,
-            0.015,
+            0.00001,
+            0.003,
         ),
 
         peak_width_range=(
-            0.004,
-            0.055,
+            0.010,
+            0.060,
         ),
 
         policy_fn=policy,

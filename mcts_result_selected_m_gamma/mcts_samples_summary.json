@@ -1,0 +1,18 @@
+[
+  {
+    "split": "test",
+    "local_index": 367,
+    "m": 0.800000011920929,
+    "gamma": 0.20000000298023224,
+    "m_squared": 0.6400000190734865,
+    "gy_key": "gy_noisy",
+    "fx_initial_rmse": 0.04332089911955575,
+    "fx_refined_rmse": 0.04299961353584384,
+    "g_noise_rmse": 0.03467856160093283,
+    "g_noise_relative_rmse_percent": 10.130569043021822,
+    "gy_target_rmse_before": 0.03635024855865306,
+    "gy_target_rmse_after": 0.03454741360512763,
+    "mcts_best_score": 0.010376197219949587,
+    "sample_dir": "mcts_result_selected_m_gamma\\sample_01_index_367"
+  }
+]

@@ -1,0 +1,2 @@
+﻿split,local_index,m,gamma,m_squared,gy_key,fx_initial_rmse,fx_refined_rmse,g_noise_rmse,g_noise_relative_rmse_percent,gy_target_rmse_before,gy_target_rmse_after,mcts_best_score,sample_dir
+test,367,0.800000011920929,0.20000000298023224,0.6400000190734865,gy_noisy,0.04332089911955575,0.04299961353584384,0.03467856160093283,10.130569043021822,0.03635024855865306,0.03454741360512763,0.010376197219949587,mcts_result_selected_m_gamma\sample_01_index_367
