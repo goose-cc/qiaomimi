@@ -1,0 +1,10 @@
+﻿set,gamma,gamma_class
+train_seen,0.01,0
+train_seen,0.05,1
+train_seen,0.2,2
+train_seen,0.5,3
+train_seen,1.0,4
+test_interp,0.025,-1
+test_interp,0.1,-1
+test_interp,0.32,-1
+test_interp,0.7,-1
