@@ -1,0 +1,96 @@
+{
+  "experiment": "gamma-only curriculum",
+  "tier": "dense_log",
+  "fixed_parameters": {
+    "a1": 0.1,
+    "a2": 0.025,
+    "a3": 0.0,
+    "m": 0.8
+  },
+  "train_gammas": [
+    0.01,
+    0.015848931924611134,
+    0.025118864315095794,
+    0.039810717055349734,
+    0.06309573444801933,
+    0.1,
+    0.15848931924611143,
+    0.25118864315095807,
+    0.3981071705534973,
+    0.6309573444801934,
+    1.0
+  ],
+  "interp_gammas": [
+    0.012589254117941671,
+    0.019952623149688792,
+    0.03162277660168379,
+    0.050118723362727234,
+    0.07943282347242815,
+    0.12589254117941676,
+    0.19952623149688803,
+    0.316227766016838,
+    0.5011872336272724,
+    0.7943282347242816
+  ],
+  "q2_range": [
+    -100.0,
+    -6.0
+  ],
+  "q2_points": 100,
+  "s_range": [
+    0.1764,
+    6.0
+  ],
+  "output_points": 100,
+  "integration_points": 512,
+  "data_scale": 160000.0,
+  "noise_definition": "g_noisy = g_clean + noise_level * RMS(g_clean) * N(0,1)",
+  "noise_levels": [
+    0.0,
+    0.002,
+    0.01
+  ],
+  "reference_noise_for_separation": 0.002,
+  "snr_sep_definition": "||g_i-g_j||_2 / [noise_level * mean(RMS(g_i), RMS(g_j))]",
+  "snr_sep_rms_definition": "RMS(g_i-g_j) / [noise_level * mean(RMS(g_i), RMS(g_j))]",
+  "split_counts_per_gamma": {
+    "train": 1819,
+    "val": 228,
+    "test_seen": 455,
+    "test_interp": 400
+  },
+  "independence_rule": "train/val/test_seen/test_interp use disjoint deterministic RNG seed ranges",
+  "seed_base": 20260809,
+  "npz_fields": [
+    "fx",
+    "gy_clean",
+    "gy_noisy",
+    "x",
+    "y",
+    "q2",
+    "parameters",
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma",
+    "gamma_class",
+    "gamma_index",
+    "noise_level",
+    "noise_sigma",
+    "seed",
+    "noise_realization_id"
+  ],
+  "parameter_names": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma"
+  ],
+  "notes": [
+    "fx is the existing scaled target u(s), so PeakInversionDataset can load these files directly.",
+    "gamma_class is 0..K-1 for seen splits and -1 for interpolation samples.",
+    "q2_points defaults to 100. Increasing to 500/1000 recomputes the physical forward model; no interpolation is used."
+  ]
+}

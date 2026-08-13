@@ -17,6 +17,7 @@ Default first-stage settings follow the agreed experiment:
     q^2 in [-100, -6]
     Nq = 100
     Easy gamma = [0.01, 0.05, 0.20, 0.50, 1.00]
+    Dense-log mode = configurable log-spaced gamma anchors (Exp19B)
     noise levels = [0%, 0.2%, 1%]
 
 Outputs:
@@ -356,9 +357,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="./data_gamma_curriculum_easy")
     parser.add_argument(
         "--tier",
-        choices=("easy", "medium", "hard", "custom"),
+        choices=("easy", "medium", "hard", "dense_log", "custom"),
         default="easy",
-        help="easy uses the agreed five coarse gamma values; medium/hard are auto-selected by SNR_sep.",
+        help="easy uses five coarse gamma values; medium/hard are SNR-selected; dense_log uses log-spaced gamma anchors.",
     )
     parser.add_argument(
         "--gamma-values",
@@ -402,6 +403,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--medium-target-snr", type=float, default=3.0)
     parser.add_argument("--hard-target-snr", type=float, default=1.0)
     parser.add_argument("--tier-gamma-count", type=int, default=5)
+    parser.add_argument(
+        "--dense-train-gamma-min",
+        type=float,
+        default=0.01,
+        help="minimum training gamma used by --tier dense_log.",
+    )
+    parser.add_argument(
+        "--dense-train-gamma-max",
+        type=float,
+        default=1.0,
+        help="maximum training gamma used by --tier dense_log.",
+    )
 
     parser.add_argument("--seed", type=int, default=20260809)
     parser.add_argument("--analysis-only", action="store_true")
@@ -427,6 +440,12 @@ def main() -> None:
         raise ValueError("--reference-noise must be > 0")
     if args.dense_gamma_min <= 0.0 or args.dense_gamma_max <= args.dense_gamma_min:
         raise ValueError("invalid dense gamma range")
+    if args.dense_train_gamma_min <= 0.0:
+        raise ValueError("--dense-train-gamma-min must be > 0")
+    if args.dense_train_gamma_max <= args.dense_train_gamma_min:
+        raise ValueError("--dense-train-gamma-max must be larger than --dense-train-gamma-min")
+    if args.tier_gamma_count < 2:
+        raise ValueError("--tier-gamma-count must be >= 2")
 
     output_dir = Path(args.output_dir)
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -477,6 +496,17 @@ def main() -> None:
             reference_noise=args.reference_noise,
         )
         effective_tier = "hard"
+    elif args.tier == "dense_log":
+        # Exp19B coverage ladder: increase the number of physical gamma states
+        # while keeping the other four parameters fixed.  Interpolation test
+        # points are geometric midpoints and therefore never appear in train.
+        train_gammas = np.geomspace(
+            args.dense_train_gamma_min,
+            args.dense_train_gamma_max,
+            int(args.tier_gamma_count),
+            dtype=np.float64,
+        ).tolist()
+        effective_tier = "dense_log"
     else:
         raise ValueError("--tier custom requires --gamma-values")
 
