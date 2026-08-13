@@ -116,6 +116,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data-dir", required=True)
     p.add_argument("--train-noise-dir", default="noise_0p2pct")
     p.add_argument("--output-dir", required=True)
+    p.add_argument("--result-prefix", default="exp20", help="prefix for summary/samples/metadata output files")
     p.add_argument("--device", default="cuda")
     p.add_argument("--seed", type=int, default=20260813)
     p.add_argument("--epochs", type=int, default=80)
@@ -773,8 +774,9 @@ def main() -> None:
                 )
                 scatter_done = True
 
-    write_csv(output_dir / "exp20_summary.csv", summary_rows)
-    write_csv(output_dir / "exp20_samples.csv", sample_rows)
+    result_prefix = str(args.result_prefix).strip() or "exp20"
+    write_csv(output_dir / f"{result_prefix}_summary.csv", summary_rows)
+    write_csv(output_dir / f"{result_prefix}_samples.csv", sample_rows)
     if representative_rows:
         write_csv(output_dir / "representative_curve_samples.csv", representative_rows)
 
@@ -788,15 +790,15 @@ def main() -> None:
         "dataset_metadata": metadata,
         "checkpoint": str(checkpoint_path),
     }
-    with (output_dir / "exp20_metadata.json").open("w", encoding="utf-8") as f:
+    with (output_dir / f"{result_prefix}_metadata.json").open("w", encoding="utf-8") as f:
         json.dump(run_meta, f, ensure_ascii=False, indent=2, default=str)
 
     print("=" * 96)
-    print("Exp20 finished.")
+    print(f"{result_prefix} training finished.")
     print(f"output: {output_dir}")
     print("Read first:")
-    print(f"  {output_dir / 'exp20_summary.csv'}")
-    print(f"  {output_dir / 'exp20_samples.csv'}")
+    print(f"  {output_dir / (result_prefix + '_summary.csv')}")
+    print(f"  {output_dir / (result_prefix + '_samples.csv')}")
     if representative_rows:
         print(f"  {output_dir / 'representative_curve_samples.csv'}")
         print(f"  {output_dir / 'curve_fits'}")
