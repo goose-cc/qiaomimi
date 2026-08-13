@@ -1,0 +1,103 @@
+{
+  "experiment": "Exp20 pairwise curriculum",
+  "mode": "a1gamma",
+  "second_parameter": "a1",
+  "fixed_parameters": {
+    "a2": 0.025,
+    "a3": 0.0,
+    "m": 0.8
+  },
+  "second_train_values": [
+    0.05,
+    0.065,
+    0.08,
+    0.095,
+    0.11,
+    0.125,
+    0.14,
+    0.155,
+    0.17,
+    0.185,
+    0.2
+  ],
+  "second_interp_values": [
+    0.0575,
+    0.07250000000000001,
+    0.0875,
+    0.10250000000000001,
+    0.1175,
+    0.1325,
+    0.14750000000000002,
+    0.1625,
+    0.1775,
+    0.1925
+  ],
+  "gamma_train_values": [
+    0.01,
+    0.015848931924611134,
+    0.025118864315095794,
+    0.039810717055349734,
+    0.06309573444801933,
+    0.1,
+    0.15848931924611143,
+    0.25118864315095807,
+    0.3981071705534973,
+    0.6309573444801934,
+    1.0
+  ],
+  "gamma_interp_values": [
+    0.012589254117941671,
+    0.019952623149688792,
+    0.03162277660168379,
+    0.050118723362727234,
+    0.07943282347242815,
+    0.12589254117941676,
+    0.19952623149688803,
+    0.316227766016838,
+    0.5011872336272724,
+    0.7943282347242816
+  ],
+  "noise_levels": [
+    0.0,
+    0.002,
+    0.01
+  ],
+  "train_noise_level": 0.002,
+  "reference_noise": 0.002,
+  "q2_range": [
+    -100.0,
+    -6.0
+  ],
+  "q2_points": 100,
+  "output_points": 100,
+  "integration_points": 512,
+  "data_scale": 160000.0,
+  "counts_per_state": {
+    "train": 165,
+    "val": 20,
+    "test_seen": 36,
+    "test_interp_*": 20
+  },
+  "training_state_count": 121,
+  "nearest_neighbor_snr_at_reference_noise": {
+    "min": 1.7718117104423758,
+    "median": 8.560875339147517,
+    "p90": 23.65925869307734
+  },
+  "noise_definition": "g_noisy = g_clean + noise_level * RMS(g_clean) * N(0,1)",
+  "parameter_names": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma"
+  ],
+  "notes": [
+    "Physical formula is unchanged.",
+    "train/val exist only at the designated train-noise level.",
+    "test_interp_gamma isolates unseen gamma with seen second parameter.",
+    "test_interp_second isolates unseen second parameter with seen gamma.",
+    "test_interp_both tests genuine 2D interpolation.",
+    "state_nearest_neighbor_separation.csv checks whether different 2D physical states are already close in g-space before training."
+  ]
+}
