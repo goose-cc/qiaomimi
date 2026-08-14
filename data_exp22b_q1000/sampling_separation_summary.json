@@ -1,0 +1,21 @@
+{
+  "state_count": 27,
+  "min_snr_rms": 1.9171718917697629,
+  "median_nearest_snr_rms": 4.663284701226879,
+  "p90_nearest_snr_rms": 7.644333404226545,
+  "min_snr": 60.62629844046272,
+  "median_nearest_snr": 147.46601033694733,
+  "min_relative_l2": 0.0038343437835395263,
+  "median_nearest_relative_l2": 0.009326569402453756,
+  "min_rms_g_relative": 0.0038343437835395263,
+  "median_nearest_rms_g_relative": 0.009326569402453758,
+  "min_rms_g_gap_percent": 0.3834343783539526,
+  "median_nearest_rms_g_gap_percent": 0.9326569402453757,
+  "q2_points": 1000,
+  "q2_min": -100.0,
+  "q2_max": -6.0,
+  "reference_noise": 0.002,
+  "sqrt_q2_points": 31.622776601683793,
+  "expected_full_over_rms": 31.622776601683793,
+  "observed_min_full_over_rms": 31.622776601683796
+}

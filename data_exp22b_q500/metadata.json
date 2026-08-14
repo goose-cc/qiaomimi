@@ -1,0 +1,108 @@
+{
+  "experiment": "Exp22B fixed-class q2-density control",
+  "mode": "a1gamma",
+  "second_parameter": "a1",
+  "fixed_parameters": {
+    "a2": 0.025,
+    "a3": 0.0,
+    "m": 0.8
+  },
+  "source_exp22a_metadata": "data_exp22a_rms_snr2\\metadata.json",
+  "controlled_change": "q2_points only",
+  "second_train_values": [
+    0.05,
+    0.06875,
+    0.08750000000000001,
+    0.10625000000000001,
+    0.125,
+    0.14375000000000002,
+    0.16250000000000003,
+    0.18125000000000002,
+    0.2
+  ],
+  "second_interp_values": [
+    0.059375000000000004,
+    0.078125,
+    0.09687500000000002,
+    0.115625,
+    0.13437500000000002,
+    0.153125,
+    0.17187500000000003,
+    0.19062500000000002
+  ],
+  "gamma_train_values": [
+    0.01,
+    0.1,
+    1.0
+  ],
+  "gamma_interp_values": [
+    0.03162277660168379,
+    0.31622776601683794
+  ],
+  "training_state_count": 27,
+  "selected_separation": {
+    "state_count": 27,
+    "min_snr_rms": 1.9359538233164166,
+    "median_nearest_snr_rms": 4.693486131602178,
+    "p90_nearest_snr_rms": 7.652242009966534,
+    "min_snr": 43.28924350236125,
+    "median_nearest_snr": 104.94954041714993,
+    "min_relative_l2": 0.0038719076466328336,
+    "median_nearest_relative_l2": 0.009386972263204353,
+    "min_rms_g_relative": 0.003871907646632833,
+    "median_nearest_rms_g_relative": 0.009386972263204355,
+    "min_rms_g_gap_percent": 0.38719076466328334,
+    "median_nearest_rms_g_gap_percent": 0.9386972263204354
+  },
+  "sampling_separation_summary": {
+    "state_count": 27,
+    "min_snr_rms": 1.9359538233164166,
+    "median_nearest_snr_rms": 4.693486131602178,
+    "p90_nearest_snr_rms": 7.652242009966534,
+    "min_snr": 43.28924350236125,
+    "median_nearest_snr": 104.94954041714993,
+    "min_relative_l2": 0.0038719076466328336,
+    "median_nearest_relative_l2": 0.009386972263204353,
+    "min_rms_g_relative": 0.003871907646632833,
+    "median_nearest_rms_g_relative": 0.009386972263204355,
+    "min_rms_g_gap_percent": 0.38719076466328334,
+    "median_nearest_rms_g_gap_percent": 0.9386972263204354,
+    "q2_points": 500,
+    "q2_min": -100.0,
+    "q2_max": -6.0,
+    "reference_noise": 0.002,
+    "sqrt_q2_points": 22.360679774997898,
+    "expected_full_over_rms": 22.360679774997898,
+    "observed_min_full_over_rms": 22.360679774997898
+  },
+  "noise_levels": [
+    0.0,
+    0.002,
+    0.01
+  ],
+  "train_noise_level": 0.002,
+  "reference_noise": 0.002,
+  "q2_range": [
+    -100.0,
+    -6.0
+  ],
+  "q2_points": 500,
+  "output_points": 100,
+  "integration_points": 128,
+  "counts_per_state": {
+    "train": 741,
+    "val": 93,
+    "test_seen": 163,
+    "test_interp_gamma": 122,
+    "test_interp_second": 92,
+    "test_interp_both": 138
+  },
+  "noise_definition": "g_noisy = g_clean + noise_level * RMS(g_clean) * N(0,1)",
+  "notes": [
+    "The 9x3 Exp22A a1-gamma training classes are fixed and are not re-selected.",
+    "g(q^2) is recomputed by the physical forward model at the requested q2_points; no interpolation from the 100-point input is used.",
+    "RMS-SNR should be nearly sampling-density invariant when the q2 range is unchanged.",
+    "Full-curve SNR may grow approximately as sqrt(Nq) if the added noisy observations contribute independent evidence.",
+    "The MLP hidden widths are unchanged, but its first linear layer has more parameters when Nq increases; the aggregate report records this caveat."
+  ]
+}

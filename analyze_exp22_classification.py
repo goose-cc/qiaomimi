@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Exp22A post-training classification-style diagnostics.
+"""Exp22A/Exp22B post-training classification-style diagnostics.
 
 The network is still trained as a continuous regressor.  For the "test_seen"
 split only, this script additionally snaps each continuous prediction to the
@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data-dir", required=True)
     p.add_argument("--result-dir", required=True)
     p.add_argument("--result-prefix", default="exp22a")
+    p.add_argument("--experiment-label", default="Exp22A")
     return p.parse_args()
 
 
@@ -165,13 +166,13 @@ def main() -> None:
         save_confusion_plot(
             gamma_matrix,
             gamma_labels,
-            f"Exp22A gamma-anchor confusion | {noise_dir}",
+            f"{args.experiment_label} gamma-anchor confusion | {noise_dir}",
             output_dir / f"gamma_confusion_{noise_dir}.png",
         )
         save_confusion_plot(
             a1_matrix,
             a1_labels,
-            f"Exp22A a1-anchor confusion | {noise_dir}",
+            f"{args.experiment_label} a1-anchor confusion | {noise_dir}",
             output_dir / f"a1_confusion_{noise_dir}.png",
         )
 
@@ -182,7 +183,7 @@ def main() -> None:
         writer.writerows(rows)
 
     print("=" * 96)
-    print("Exp22A classification-style diagnostics")
+    print(f"{args.experiment_label} classification-style diagnostics")
     print(f"a1 anchors    : {a1_anchors}")
     print(f"gamma anchors : {gamma_anchors}")
     print(f"summary       : {summary_path}")
