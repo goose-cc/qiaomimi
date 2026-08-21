@@ -1,0 +1,4 @@
+﻿rank,true_a1,pred_a1,true_gamma,pred_gamma,gamma_factor_error,f_relative_l2,g_clean_relative_l2,f_plot,g_plot
+best,0.053100362420082,0.0585972294211387,0.8725817799568176,0.8726019263267517,1.000023088231266,0.0114575307816267,0.0091866040602326,figures_exp26\representative_curves\f_best.png,figures_exp26\representative_curves\g_best.png
+median,0.0547238998115062,0.0600236803293228,0.6535199880599976,0.8265572190284729,1.2647772587371715,0.0144798988476395,0.0021795351058244,figures_exp26\representative_curves\f_median.png,figures_exp26\representative_curves\g_median.png
+worst,0.0569419153034687,0.064471811056137,0.0188808534294366,0.1379679590463638,7.3072946390898466,0.2397050708532333,0.0088809002190828,figures_exp26\representative_curves\f_worst.png,figures_exp26\representative_curves\g_worst.png
