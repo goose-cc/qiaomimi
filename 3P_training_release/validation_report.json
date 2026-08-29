@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "error_count": 0,
+  "warning_count": 0,
+  "errors": [],
+  "warnings": [],
+  "candidate_state_count": 48000,
+  "selected_state_count": 260,
+  "split_state_counts": {
+    "train": 200,
+    "val": 30,
+    "test": 30
+  },
+  "configured_split_minima": {
+    "train": 200,
+    "val": 30,
+    "test": 30
+  },
+  "direct_forward_max_rel_l2": 0.0,
+  "q2_min": -100.0,
+  "q2_max": -6.0,
+  "q2_domain_locked": true
+}

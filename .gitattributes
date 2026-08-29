@@ -3,3 +3,4 @@ data_exp5/*.npz filter=lfs diff=lfs merge=lfs -text
 *.pth filter=lfs diff=lfs merge=lfs -text
 *.pt filter=lfs diff=lfs merge=lfs -text
 *.ckpt filter=lfs diff=lfs merge=lfs -text
+3P_training_release/*/*.npz filter=lfs diff=lfs merge=lfs -text
