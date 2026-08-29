@@ -1,0 +1,128 @@
+{
+  "stage": "4P",
+  "output_dir": "data_pipeline_outputs/stage_4p",
+  "default_action": "smoke",
+  "free_params": [
+    "a1",
+    "a2",
+    "m",
+    "gamma"
+  ],
+  "fixed_params": {
+    "a3": 0.0
+  },
+  "parameter_ranges": {
+    "a1": [
+      0.05,
+      0.2
+    ],
+    "a2": [
+      0.0,
+      0.05
+    ],
+    "a3": [
+      -0.05,
+      0.05
+    ],
+    "m": [
+      0.4,
+      1.2
+    ],
+    "gamma": [
+      0.01,
+      1.0
+    ]
+  },
+  "sampling": {
+    "method": "latin_hypercube",
+    "candidate_count": 12000,
+    "seed": 20260836,
+    "gamma_scale": "log10",
+    "include_corners": true,
+    "max_corners": 32,
+    "physical_refill_rounds": 20
+  },
+  "forward": {
+    "q2_min": -100.0,
+    "q2_max": -6.0,
+    "q2_domain_locked": true,
+    "model_input_points": 1000,
+    "observation_points": 500,
+    "integration_points": 128
+  },
+  "identifiability": {
+    "reference_noise": 0.002,
+    "unacceptable_difference": {
+      "a1_abs": 0.03,
+      "a2_abs": 0.01,
+      "a3_abs": 0.02,
+      "m_abs": 0.16,
+      "gamma_factor": 2.0
+    },
+    "search_backend": "auto",
+    "exact_kdtree_limit": 50000,
+    "initial_neighbors": 128,
+    "max_neighbors": 4096,
+    "query_batch_size": 64,
+    "projection_dims": 24,
+    "search_seed": 20260880,
+    "hard_state_count": 200,
+    "threshold_scan": [
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "continuous_profile": {
+      "enabled": true,
+      "m_points": 51,
+      "gamma_points": 401,
+      "basis_build_chunk": 256,
+      "truth_chunk": 32,
+      "basis_profile_chunk": 2048
+    }
+  },
+  "selection": {
+    "alias_threshold": null,
+    "min_separation_rms_snr": 1.3,
+    "max_parameter_cover_radius": 0.35,
+    "max_selected_states": 260
+  },
+  "coverage": {
+    "projection_bins": 10
+  },
+  "split": {
+    "train_fraction": 0.7,
+    "val_fraction": 0.15,
+    "test_fraction": 0.15,
+    "min_val_states": 5,
+    "min_test_states": 5,
+    "max_train_cover_rms_snr": 2.0,
+    "seed": 20260850
+  },
+  "noise": {
+    "noise_levels": [
+      0.0,
+      0.002,
+      0.01
+    ],
+    "seed": 20260851,
+    "samples_per_train_state": null,
+    "samples_per_val_state": null,
+    "samples_per_test_state": null,
+    "target_train_samples": 20000,
+    "target_val_samples": 3000,
+    "target_test_samples": 5000,
+    "compressed": true
+  },
+  "validation": {
+    "direct_forward_sample": 32,
+    "direct_forward_max_rel_l2": 5e-05,
+    "min_test_parameter_span_fraction": 0.5
+  }
+}

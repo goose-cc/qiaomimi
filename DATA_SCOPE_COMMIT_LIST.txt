@@ -1,0 +1,45 @@
+DATA-ONLY FILES RECOMMENDED FOR THE NEW INFRASTRUCTURE COMMIT
+
+DATA_PIPELINE_AUDIT.md
+verify_data_pipeline_scope.ps1
+run_stage_3p.ps1
+run_stage_4p.ps1
+run_stage_5p.ps1
+
+data_pipeline/__init__.py
+data_pipeline/README.md
+data_pipeline/pipeline_core.py
+data_pipeline/data_generate_candidate_pool.py
+data_pipeline/analyze_identifiability.py
+data_pipeline/select_identifiable_states.py
+data_pipeline/analyze_parameter_coverage.py
+data_pipeline/split_physical_states.py
+data_pipeline/build_noisy_dataset.py
+data_pipeline/validate_dataset.py
+data_pipeline/run_stage.py
+data_pipeline/configs/stage_3p.json
+data_pipeline/configs/stage_4p.json
+data_pipeline/configs/stage_5p.json
+
+LEGACY DATA-SIDE REFERENCES (within scope, but not required for the new common-core commit)
+build_exp35_alias_pool.py
+build_exp36_alias_pool.py
+build_exp37_alias_pool.py
+data_generate_exp35_identifiable_region.py
+data_generate_exp36_identifiable_region.py
+data_generate_exp37_identifiable_region.py
+exp36_exp37_alias_core.py
+exp36_exp37_data_core.py
+analyze_exp36_exp37_identifiability.py
+check_exp35_exp36_exp37_equivalence.py
+run_exp35_exp36_exp37_equivalence.ps1
+run_exp36_exp37_identifiability.ps1
+run_exp36_joint_validation.ps1
+run_exp37_joint_validation.ps1
+
+DO NOT COMMIT AS SOURCE
+Generated data_exp35_*/data_exp36_*/data_exp37_* directories
+data_pipeline_outputs/
+validation_results/
+*.patch / *.diff / *_manifest.json / PATCH_MANIFEST.json
+temporary full-project copies such as python_exp36_exp37_patched/
