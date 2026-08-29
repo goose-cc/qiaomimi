@@ -8,6 +8,7 @@ $Python = ".\venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) { $Python = "python" }
 $ArgsList = @("data_pipeline\run_stage.py", "--config", "data_pipeline\configs\stage_4p.json")
 if ($AliasThreshold -ne $null) { $ArgsList += @("--alias-threshold", [string]$AliasThreshold) }
+if ($MinSelectedStates -ne $null) { $ArgsList += @("--min-selected-states", [string]$MinSelectedStates) }
 if ($Formal) { $ArgsList += "--formal" }
 if ($Overwrite) { $ArgsList += "--overwrite" }
 & $Python @ArgsList

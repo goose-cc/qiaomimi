@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--formal", action="store_true", help="override a config whose default_action is smoke")
     p.add_argument("--analysis-only", action="store_true")
+    p.add_argument("--min-selected-states", type=int, help="minimum physical states required after alias/coverage selection")
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
 
@@ -114,6 +115,7 @@ def main() -> None:
 
     run_select(
         str(effective_path), str(out), float(alias_threshold),
+        min_selected_states=a.min_selected_states,
         smoke_permissive=smoke,
     )
     run_coverage(str(effective_path), str(out))

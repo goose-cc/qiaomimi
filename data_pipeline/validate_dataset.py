@@ -120,9 +120,18 @@ def run(config_path: str, output_dir: str | None = None, smoke_permissive: bool 
     split_sets = {name: {r["state_id"] for r in split_rows if r["split"] == name} for name in ("train", "val", "test")}
     if (split_sets["train"] & split_sets["val"]) or (split_sets["train"] & split_sets["test"]) or (split_sets["val"] & split_sets["test"]):
         _fail(errors, "physical-state leakage exists across train/val/test")
-    for name, minimum in (("val", int(cfg["split"].get("min_val_states", 5))), ("test", int(cfg["split"].get("min_test_states", 5)))):
+    split_minima = {
+        "train": int(cfg["split"].get("min_train_states", 1)),
+        "val": int(cfg["split"].get("min_val_states", 5)),
+        "test": int(cfg["split"].get("min_test_states", 5)),
+    }
+    for name, minimum in split_minima.items():
         if len(split_sets[name]) < minimum and not smoke_permissive:
-            _fail(errors, f"{name} has fewer than configured minimum physical states")
+            _fail(
+                errors,
+                f"{name} has {len(split_sets[name])} physical states, "
+                f"below configured minimum {minimum}",
+            )
 
     # Coarse parameter coverage in test. This is intentionally a span check rather than an
     # unrealistic requirement that a tiny test split occupy every multidimensional bin.
@@ -217,6 +226,7 @@ def run(config_path: str, output_dir: str | None = None, smoke_permissive: bool 
         "candidate_state_count": len(cand_rows),
         "selected_state_count": len(sel_rows),
         "split_state_counts": {k: len(v) for k, v in split_sets.items()},
+        "configured_split_minima": split_minima,
         "direct_forward_max_rel_l2": max_rel,
         "q2_min": float(q2[0]),
         "q2_max": float(q2[-1]),
