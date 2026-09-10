@@ -1,0 +1,133 @@
+{
+  "experiment": "Exp36-v2 fixed: recovery-aligned 3P data + TCN baseline",
+  "mode": "a1mgamma",
+  "free_params": [
+    "a1",
+    "m",
+    "gamma"
+  ],
+  "fixed_parameters": {
+    "a2": 0.025,
+    "a3": 0.0
+  },
+  "parameter_ranges": {
+    "a1": [
+      0.05,
+      0.2
+    ],
+    "m": [
+      0.4,
+      1.2
+    ],
+    "gamma": [
+      0.01,
+      1.0
+    ]
+  },
+  "recovery_tolerances": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "global_alias_diagnostic": {
+    "a1_abs": 0.03,
+    "m_abs": 0.16,
+    "gamma_factor": 2.0
+  },
+  "reference_noise": 0.002,
+  "candidate_count": 48000,
+  "selected_count": 260,
+  "split_counts": {
+    "train": 200,
+    "val": 30,
+    "test": 30
+  },
+  "grid_selection_cutoff_verified": 0.009413272205815702,
+  "alias_numerics_version": "exp36-v2-float64-direct-verified",
+  "grid_cutoff_role": "preselection_only; continuous refined margins are the final identifiability audit",
+  "numerics": {
+    "alias_profile_dtype": "float64",
+    "direct_verify_grid_region_winners": true,
+    "continuous_multistart": true,
+    "continuous_maxiter": 80,
+    "grid_refined_consistency_margin_tol": 1e-09,
+    "forward64_roundtrip_relL2_max": 1e-07,
+    "alias_margin_recompute_rtol": 2e-06,
+    "alias_margin_recompute_atol": 2e-09
+  },
+  "forward64_roundtrip_relL2": 0.0,
+  "max_refined_minus_verified_grid_margin": -1.679064162013466e-09,
+  "refined_recovery_margin": {
+    "min": 0.00035255886266434154,
+    "median": 0.005514040152608656,
+    "p10": 0.003247824528905839,
+    "p90": 0.010666266202310818,
+    "fraction_ge_1": 0.0
+  },
+  "selected_parameter_ranges": {
+    "a1": {
+      "min": 0.050311748543754226,
+      "max": 0.19998258464038376
+    },
+    "m": {
+      "min": 0.4002229876816273,
+      "max": 1.1996486261487007
+    },
+    "gamma": {
+      "min": 0.010110160035664666,
+      "max": 0.9981572503787616
+    }
+  },
+  "parameter_cover_radius": 0.7637242339477455,
+  "separation": {
+    "min_selected_g_separation_rms_snr": 1.3026589349897322,
+    "max_holdout_to_train_rms_snr": 4.429814338089404,
+    "max_holdout_to_train_parameter_distance": 0.20002922631113865,
+    "min_train_val_rms_snr": 1.3073556765485421,
+    "min_train_test_rms_snr": 1.3026589349897322,
+    "min_val_test_rms_snr": 1.412729690943471
+  },
+  "val_span_fraction": {
+    "a1": 0.992729269305816,
+    "m": 0.9911909878035474,
+    "loggamma": 0.9765961217931394
+  },
+  "test_span_fraction": {
+    "a1": 0.9996768334319286,
+    "m": 0.9988474487364234,
+    "loggamma": 0.9990014852328949
+  },
+  "noise_levels": [
+    0.0,
+    0.002,
+    0.01
+  ],
+  "noise_repetitions": {
+    "0": {
+      "train": 1,
+      "val": 1,
+      "test": 1
+    },
+    "0.002": {
+      "train": 150,
+      "val": 100,
+      "test": 200
+    },
+    "0.01": {
+      "train": 150,
+      "val": 100,
+      "test": 200
+    }
+  },
+  "physics_integration_points": 128,
+  "direct_forward_relL2": 0.0,
+  "validation": {
+    "pass": true,
+    "errors": [],
+    "warnings": [
+      "holdout->train g-space distance exceeds preferred diagnostic value; parameter-space coverage still passes",
+      "continuous refinement reduced some alias margins by >50% vs grid selection; grid cutoff is not a continuous-identifiability guarantee",
+      "fewer than 50% of selected states have recovery-aligned margin >= 1 reference-noise RMS; this is a physics/conditioning warning, not a data-integrity failure"
+    ]
+  }
+}

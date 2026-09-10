@@ -1,0 +1,7 @@
+{
+  "pass": true,
+  "errors": [],
+  "warnings": [
+    "holdout->train g distance 2.01202 exceeds preferred 1.5 but passes hard limit"
+  ]
+}

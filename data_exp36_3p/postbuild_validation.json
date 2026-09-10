@@ -1,0 +1,10 @@
+{
+  "pass": true,
+  "errors": [],
+  "warnings": [
+    "Fewer than 50% of selected states have recovery-aligned alias margin >= 1 reference-noise RMS. This is a physics/conditioning warning, not a numerical-integrity failure."
+  ],
+  "checked_unique_states": 260,
+  "alias_rows_checked": 260,
+  "alias_numerics_version": "exp36-v2-float64-direct-verified"
+}

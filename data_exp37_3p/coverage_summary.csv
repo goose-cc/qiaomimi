@@ -1,0 +1,12 @@
+﻿metric,value
+parameter_cover_radius,0.3343633562744347
+train_parameter_cover_radius,0.3343633562744347
+max_holdout_to_train_parameter_distance,0.11486196517944336
+max_holdout_to_train_rms_snr,2.0120160579681396
+min_selected_g_separation_rms_snr,1.3015258312225342
+val_a1_span_fraction,0.9809029076155751
+val_m_span_fraction,0.9950852129684198
+val_loggamma_span_fraction,0.9873075429890232
+test_a1_span_fraction,0.9813419358162508
+test_m_span_fraction,0.9895431465010162
+test_loggamma_span_fraction,0.9979176157614595

@@ -1,0 +1,12 @@
+﻿check,status,value
+selected_count,PASS,260
+min_selected_g_separation,PASS,1.3026589349897322
+max_holdout_to_train_parameter_distance,PASS,0.20002922631113865
+max_holdout_to_train_rms_snr,INFO,4.429814338089404
+test_span_min,PASS,0.9988474487364234
+direct_forward_relL2,PASS,0.0
+forward64_roundtrip_relL2,PASS,0.0
+max_refined_minus_verified_grid_margin,PASS,-1.679064162013466e-09
+recovery_margin_refined_min,INFO,0.00035255886266434154
+recovery_margin_refined_median,INFO,0.005514040152608656
+fraction_refined_margin_ge_1,INFO,0.0

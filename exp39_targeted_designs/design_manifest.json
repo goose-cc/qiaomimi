@@ -1,0 +1,33 @@
+{
+  "parameter_ranges_frozen": {
+    "a1": [
+      0.05,
+      0.2
+    ],
+    "m": [
+      0.4,
+      1.2
+    ],
+    "gamma": [
+      0.01,
+      1.0
+    ]
+  },
+  "target_m_slices": [
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65
+  ],
+  "designs": [
+    "mixed_targeted_256",
+    "robust3p_eopt_200",
+    "worstslice_agamma_200",
+    "mixed_targeted_200",
+    "hybrid_plus_targeted_240",
+    "hybrid_near_200"
+  ],
+  "note": "Heuristic rank is not the final choice. Deep direct-verified continuous 3P alias audit is required."
+}

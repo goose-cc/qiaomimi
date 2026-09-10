@@ -1,0 +1,121 @@
+{
+  "experiment": "Exp38: redesign g(q^2) for stable 3P inversion",
+  "dataset_version": "exp38-g-redesign-v1",
+  "parameter_ranges": {
+    "a1": [0.05, 0.20],
+    "m": [0.40, 1.20],
+    "gamma": [0.01, 1.0]
+  },
+  "fixed_parameters": {"a2": 0.025, "a3": 0.0},
+  "recovery_tolerances": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "reference_noise": 0.002,
+  "physics_integration_points": 128,
+  "original_q2_domain": [-100.0, -6.0],
+  "observation_designs": [
+    {"id": "baseline_linear_100", "kind": "linear", "q2_min": -100.0, "q2_max": -6.0, "points": 100},
+    {"id": "wide_far_linear_120", "kind": "linear", "q2_min": -180.0, "q2_max": -6.0, "points": 120},
+    {"id": "current_dense_160", "kind": "linear", "q2_min": -100.0, "q2_max": -6.0, "points": 160},
+    {"id": "mid_extend_linear_120", "kind": "linear", "q2_min": -100.0, "q2_max": -2.0, "points": 120},
+    {"id": "near_extend_linear_140", "kind": "linear", "q2_min": -100.0, "q2_max": -1.0, "points": 140},
+    {"id": "near_extend_linear_160", "kind": "linear", "q2_min": -100.0, "q2_max": -0.5, "points": 160},
+    {"id": "hybrid_near_160", "kind": "hybrid", "segments": [
+      {"kind": "linear", "q2_min": -100.0, "q2_max": -15.0, "points": 48},
+      {"kind": "geom_abs", "abs_max": 15.0, "abs_min": 0.5, "points": 112}
+    ]},
+    {"id": "hybrid_near_200", "kind": "hybrid", "segments": [
+      {"kind": "linear", "q2_min": -150.0, "q2_max": -20.0, "points": 48},
+      {"kind": "geom_abs", "abs_max": 20.0, "abs_min": 0.2, "points": 152}
+    ]},
+    {"id": "near_focus_geom_160", "kind": "geom_abs", "abs_max": 30.0, "abs_min": 0.2, "points": 160}
+  ],
+  "design_scan": {
+    "anchor_count": 384,
+    "anchor_seed": 2026091101,
+    "profile_grid": {"m_points": 61, "log_gamma_points": 61},
+    "finalist_count": 4,
+    "continuous_anchor_count": 96,
+    "continuous_maxiter": 45,
+    "continuous_multistart": 3,
+    "varpro_anchor_count": 24,
+    "varpro_repetitions": 4,
+    "varpro_m_points": 91,
+    "varpro_log_gamma_points": 91,
+    "varpro_seed_count": 6,
+    "varpro_maxiter": 40,
+    "seed": 2026091109
+  },
+  "official_dataset": {
+    "candidate_count": 48000,
+    "candidate_seed": 2026091121,
+    "profile_grid": {"m_points": 101, "log_gamma_points": 101},
+    "continuous_prebank": {
+      "bins_per_axis": [9, 9, 9],
+      "top_per_cell": 6,
+      "max_states": 4200,
+      "continuous_maxiter": 65,
+      "continuous_multistart": 3
+    },
+    "selection": {
+      "selected_count": 260,
+      "split_counts": {"train": 200, "val": 30, "test": 30},
+      "min_selected_g_separation_rms_snr": 1.3,
+      "max_parameter_cover_radius": 0.35,
+      "max_holdout_to_train_parameter_distance": 0.35,
+      "max_holdout_to_train_rms_snr_hard": 2.5,
+      "max_holdout_to_train_rms_snr_preferred": 1.5,
+      "coverage_axis_bins": 8,
+      "minimum_train_count_per_axis_bin": 2,
+      "minimum_test_span_fraction": 0.5,
+      "minimum_val_span_fraction": 0.5,
+      "thresholds_mahalanobis": [5.0, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0]
+    },
+    "noise_levels": [0.0, 0.002, 0.01],
+    "noise_repetitions": {
+      "0": {"train": 1, "val": 1, "test": 1},
+      "0.002": {"train": 150, "val": 100, "test": 200},
+      "0.01": {"train": 150, "val": 100, "test": 200}
+    }
+  },
+  "physics_ceiling_gate": {
+    "noise_level": 0.002,
+    "minimum_a1_recovery": 0.95,
+    "minimum_m_recovery": 0.95,
+    "minimum_gamma_recovery": 0.95,
+    "minimum_joint_recovery": 0.90
+  },
+  "varpro": {
+    "max_eval_repetitions_per_state": {"0": 1, "0.002": 20, "0.01": 10},
+    "continuous_maxiter": 65,
+    "m_points": 181,
+    "log_gamma_points": 181,
+    "grid_seed_count_clean": 24,
+    "grid_seed_count_noisy": 10,
+    "seed": 2026091137
+  },
+  "training": {
+    "seeds": [2026091151, 2026091152, 2026091153],
+    "training_noise": 0.002,
+    "epochs": 120,
+    "patience": 18,
+    "batch_size": 256,
+    "eval_batch_size": 512,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "tcn_channels": 64,
+    "tcn_dilations": [1, 2, 4, 8, 16],
+    "kernel_size": 3,
+    "head_hidden": 160,
+    "dropout": 0.05
+  },
+  "network_gate": {
+    "noise_level": 0.002,
+    "minimum_mean_a1_recovery": 0.95,
+    "minimum_mean_m_recovery": 0.95,
+    "minimum_mean_gamma_recovery": 0.95,
+    "minimum_mean_joint_recovery": 0.90
+  }
+}

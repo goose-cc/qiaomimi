@@ -1,0 +1,11 @@
+﻿design_id,mahalanobis_threshold,eligible_states,eligible_fraction
+worstslice_agamma_200,0.25,74,0.7708333333333334
+worstslice_agamma_200,0.5,50,0.5208333333333334
+worstslice_agamma_200,1.0,12,0.125
+worstslice_agamma_200,1.5,0,0.0
+worstslice_agamma_200,2.0,0,0.0
+worstslice_agamma_200,2.5,0,0.0
+worstslice_agamma_200,3.0,0,0.0
+worstslice_agamma_200,3.3,0,0.0
+worstslice_agamma_200,4.0,0,0.0
+worstslice_agamma_200,5.0,0,0.0

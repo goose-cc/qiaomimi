@@ -1,0 +1,11 @@
+﻿design_id,mahalanobis_threshold,eligible_states,eligible_fraction,occupied_4x4x4_cells,parameter_cover_radius_if_eligible
+near_focus_geom_160,0.25,80,0.8333333333333334,55,0.32563246831956877
+near_focus_geom_160,0.5,67,0.6979166666666666,46,0.44791757651083103
+near_focus_geom_160,1.0,47,0.4895833333333333,33,0.7121415918791947
+near_focus_geom_160,1.5,27,0.28125,22,0.7121415918791947
+near_focus_geom_160,2.0,10,0.10416666666666667,10,0.9765771804621292
+near_focus_geom_160,2.5,2,0.020833333333333332,2,1.0672608954416312
+near_focus_geom_160,3.0,0,0.0,0,inf
+near_focus_geom_160,3.3,0,0.0,0,inf
+near_focus_geom_160,4.0,0,0.0,0,inf
+near_focus_geom_160,5.0,0,0.0,0,inf

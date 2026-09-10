@@ -1,0 +1,15 @@
+﻿continuous_recovery_alias_cutoff,eligible_refined_prebank_count,eligible_fraction_of_prebank,selection_success,failure_reason,train_parameter_cover_radius,minimum_train_count_in_any_axis_bin,train_count,val_count,test_count,final_parameter_cover_radius,max_holdout_to_train_parameter_distance,max_holdout_to_train_rms_snr,min_selected_g_separation_rms_snr,val_span_min_fraction,test_span_min_fraction
+0.1,2,0.0006858710562414266,0,,,,,,,,,,,,
+0.05,18,0.006172839506172839,0,,,,,,,,,,,,
+0.025,36,0.012345679012345678,0,,,,,,,,,,,,
+0.015,46,0.01577503429355281,0,,,,,,,,,,,,
+0.01,84,0.02880658436213992,0,,,,,,,,,,,,
+0.0075,236,0.08093278463648834,0,,,,,,,,,,,,
+0.0058504437025625996,520,0.17832647462277093,0,train_selection,,,,,,,,,,,
+0.005031069469657066,780,0.2674897119341564,0,train_selection,,,,,,,,,,,
+0.005,792,0.2716049382716049,0,train_selection,,,,,,,,,,,
+0.004443418599006672,1040,0.35665294924554186,0,parameter_cover_radius,0.5328265248519626,8,,,,,,,,,
+0.003912911799113561,1300,0.4458161865569273,0,parameter_cover_radius,0.49808698602156265,12,,,,,,,,,
+0.003492678846138178,1560,0.5349794238683128,0,parameter_cover_radius,0.39949492752644167,9,,,,,,,,,
+0.003,1913,0.6560356652949245,0,holdout_selection,0.3224816418232381,7,,,,,,,,,
+0.002740479055095528,2080,0.7133058984910837,1,,0.3343633562744347,9,200,30,30,0.3343633562744347,0.11486196517944336,2.0120160579681396,1.3015258312225342,0.9809029076155751,0.9813419358162508

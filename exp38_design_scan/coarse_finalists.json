@@ -1,0 +1,10 @@
+{
+  "finalists": [
+    "hybrid_near_200",
+    "near_focus_geom_160",
+    "near_extend_linear_160",
+    "hybrid_near_160",
+    "baseline_linear_100"
+  ],
+  "note": "Run audit_exp38_g_design.py for each finalist before choosing the official g construction."
+}

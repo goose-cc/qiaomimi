@@ -1,0 +1,27 @@
+{
+  "current_design": "hybrid_near_200",
+  "parameter_ranges_frozen": {
+    "a1": [
+      0.05,
+      0.2
+    ],
+    "m": [
+      0.4,
+      1.2
+    ],
+    "gamma": [
+      0.01,
+      1.0
+    ]
+  },
+  "worst_m_slices": [
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65
+  ],
+  "ranking_rule": "ascending fixed-m dense-grid alias Mahalanobis P10; ascending a1-gamma Jacobian sigma_min P10 tie-break",
+  "note": "This fixed-m alias scan is a dense-grid diagnosis used to target q2 design. Final decisions use the direct-verified continuous 3P audit."
+}

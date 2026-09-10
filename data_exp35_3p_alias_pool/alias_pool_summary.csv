@@ -1,0 +1,2 @@
+﻿candidate_count,alias_score_min,alias_score_median,alias_score_p90,alias_score_p95,alias_score_max,median_retrieved_remote_count,count_alias_ge_0.20,fraction_alias_ge_0.20,count_alias_ge_0.30,fraction_alias_ge_0.30,count_alias_ge_0.40,fraction_alias_ge_0.40,count_alias_ge_0.50,fraction_alias_ge_0.50,count_alias_ge_0.75,fraction_alias_ge_0.75,count_alias_ge_1.00,fraction_alias_ge_1.00
+20000,0.003771651944098204,0.09634166107143695,0.1840568736192547,0.2238501798174779,1.9760453820979047,435.0,1528,0.0764,328,0.0164,106,0.0053,41,0.00205,4,0.0002,3,0.00015

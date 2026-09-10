@@ -1,0 +1,10 @@
+﻿metric,value
+candidate_count,48000
+selected_count,260
+parameter_cover_radius,0.7637242339477455
+val_a1_span_fraction,0.992729269305816
+val_m_span_fraction,0.9911909878035474
+val_loggamma_span_fraction,0.9765961217931394
+test_a1_span_fraction,0.9996768334319286
+test_m_span_fraction,0.9988474487364234
+test_loggamma_span_fraction,0.9990014852328949

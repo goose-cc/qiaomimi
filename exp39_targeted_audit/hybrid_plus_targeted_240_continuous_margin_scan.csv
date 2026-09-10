@@ -1,0 +1,11 @@
+﻿design_id,mahalanobis_threshold,eligible_states,eligible_fraction
+hybrid_plus_targeted_240,0.25,94,0.9791666666666666
+hybrid_plus_targeted_240,0.5,81,0.84375
+hybrid_plus_targeted_240,1.0,63,0.65625
+hybrid_plus_targeted_240,1.5,53,0.5520833333333334
+hybrid_plus_targeted_240,2.0,45,0.46875
+hybrid_plus_targeted_240,2.5,35,0.3645833333333333
+hybrid_plus_targeted_240,3.0,23,0.23958333333333334
+hybrid_plus_targeted_240,3.3,17,0.17708333333333334
+hybrid_plus_targeted_240,4.0,5,0.052083333333333336
+hybrid_plus_targeted_240,5.0,0,0.0

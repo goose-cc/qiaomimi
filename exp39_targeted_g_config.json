@@ -1,0 +1,67 @@
+{
+  "experiment": "Exp39: fixed-m slice diagnosis + worst-case-targeted g(q2) design",
+  "dataset_version": "exp39-targeted-g-v1",
+  "parameter_ranges": {
+    "a1": [0.05, 0.20],
+    "m": [0.40, 1.20],
+    "gamma": [0.01, 1.0]
+  },
+  "fixed_parameters": {"a2": 0.025, "a3": 0.0},
+  "recovery_tolerances": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "reference_noise": 0.002,
+  "physics_integration_points": 128,
+  "target_parameter_recovery": 0.95,
+  "domain_policy": {
+    "parameter_ranges_are_frozen": true,
+    "never_shrink_parameter_domain": true,
+    "q2_must_remain_negative": true
+  },
+  "current_best_design": {
+    "id": "hybrid_near_200",
+    "kind": "hybrid",
+    "segments": [
+      {"kind": "linear", "q2_min": -150.0, "q2_max": -20.0, "points": 48},
+      {"kind": "geom_abs", "abs_max": 20.0, "abs_min": 0.2, "points": 152}
+    ]
+  },
+  "slice_diagnosis": {
+    "m_slice_count": 17,
+    "anchors_per_slice": 40,
+    "anchor_seed": 2026091201,
+    "gamma_grid_points": 321,
+    "worst_slice_count": 6
+  },
+  "targeted_design": {
+    "anchor_m_slice_count": 17,
+    "anchors_per_slice": 28,
+    "anchor_seed": 2026091211,
+    "candidate_q2_segments": [
+      {"kind": "linear", "q2_min": -150.0, "q2_max": -20.0, "points": 140},
+      {"kind": "geom_abs", "abs_max": 20.0, "abs_min": 0.05, "points": 480}
+    ],
+    "seed_q2": [-150.0, -100.0, -60.0, -30.0, -15.0, -8.0, -4.0, -2.0, -1.0, -0.5, -0.2, -0.1, -0.05],
+    "robust_slice_quantile": 0.10,
+    "mixed_target_fraction": 0.45,
+    "designs": [
+      {"id": "robust3p_eopt_200", "kind": "robust3p", "points": 200},
+      {"id": "worstslice_agamma_200", "kind": "worstslice_agamma", "points": 200},
+      {"id": "mixed_targeted_200", "kind": "mixed", "points": 200},
+      {"id": "mixed_targeted_256", "kind": "mixed", "points": 256},
+      {"id": "hybrid_plus_targeted_240", "kind": "augment_current", "points": 240}
+    ]
+  },
+  "deep_audit": {
+    "anchor_count": 96,
+    "anchor_seed": 2026091231,
+    "profile_grid": {"m_points": 71, "log_gamma_points": 71},
+    "continuous_maxiter": 50,
+    "continuous_multistart": 3,
+    "slice_alias_anchors_per_worst_slice": 16,
+    "slice_alias_gamma_grid_points": 241,
+    "mahalanobis_thresholds": [0.25, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.3, 4.0, 5.0]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "design_id": "hybrid_plus_targeted_240",
+  "note": "Current winner by continuous 3P P10, worst target-slice P10, then condition number. This is not yet a 95% recovery claim; next step is full 48k continuous screening + VarPro ceiling."
+}

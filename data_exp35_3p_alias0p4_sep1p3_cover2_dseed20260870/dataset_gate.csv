@@ -1,0 +1,2 @@
+﻿alias_threshold,alias_safe_candidates,selected_states,selected_alias_min,selected_g_separation_min,max_holdout_train_cover,train_states,val_states,test_states,pass_alias,pass_separation,pass_coverage
+0.4,106,68,0.40028271079063416,1.3270703551449559,1.9176924228668213,57,6,5,True,True,True

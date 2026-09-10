@@ -1,0 +1,11 @@
+﻿design_id,mahalanobis_threshold,eligible_states,eligible_fraction
+mixed_targeted_256,0.25,76,0.7916666666666666
+mixed_targeted_256,0.5,61,0.6354166666666666
+mixed_targeted_256,1.0,32,0.3333333333333333
+mixed_targeted_256,1.5,2,0.020833333333333332
+mixed_targeted_256,2.0,0,0.0
+mixed_targeted_256,2.5,0,0.0
+mixed_targeted_256,3.0,0,0.0
+mixed_targeted_256,3.3,0,0.0
+mixed_targeted_256,4.0,0,0.0
+mixed_targeted_256,5.0,0,0.0

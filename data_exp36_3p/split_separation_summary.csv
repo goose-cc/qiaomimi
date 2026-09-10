@@ -1,0 +1,7 @@
+﻿metric,value
+min_selected_g_separation_rms_snr,1.3026589349897322
+max_holdout_to_train_rms_snr,4.429814338089404
+max_holdout_to_train_parameter_distance,0.20002922631113865
+min_train_val_rms_snr,1.3073556765485421
+min_train_test_rms_snr,1.3026589349897322
+min_val_test_rms_snr,1.412729690943471
