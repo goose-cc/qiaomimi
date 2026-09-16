@@ -79,7 +79,7 @@ def scaled_spectral_components(
     """Decode physical parameters into scaled total/resonance/background curves.
 
     This is exactly the data-generating physical family:
-        rho(s) = a1/pi * (m*gamma)/((s-m)^2+(m*gamma)^2) + a2*s + a3
+        rho(s) = a1/pi * (m*gamma)/((s-m^2)^2+(m*gamma)^2) + a2*s + a3
         f(s)   = data_scale * rho(s)/(s+shift)^2
     """
     if parameters.ndim != 2 or parameters.shape[1] != 5:
@@ -96,11 +96,12 @@ def scaled_spectral_components(
     mass = parameters[:, 3:4]
     gamma = parameters[:, 4:5]
     width = (mass * gamma).clamp_min(float(width_eps))
+    center = mass.square()
 
     rho_resonance = (
         (a1 / math.pi)
         * width
-        / ((s - mass).square() + width.square())
+        / ((s - center).square() + width.square())
     )
     rho_background = a2 * s + a3
     denominator = (s + float(shift)).square()

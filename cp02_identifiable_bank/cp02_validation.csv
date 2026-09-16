@@ -1,0 +1,5 @@
+﻿check,status,value
+finite_arrays,PASS,
+full_domain_bounds,PASS,
+direct_forward_relL2,PASS,9.03124243106653e-17
+q2_euclidean_negative,PASS,-0.05

@@ -1,0 +1,4 @@
+﻿noise_level,samples,a1_recovery,m_recovery,gamma_recovery,joint_recovery,stage_gate_90_pass,target_95_pass
+0.0,64,1.0,1.0,1.0,1.0,,
+0.002,768,1.0,1.0,1.0,1.0,1,1
+0.01,384,0.59375,0.9192708333333334,0.609375,0.5286458333333334,,

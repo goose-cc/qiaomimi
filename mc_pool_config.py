@@ -37,8 +37,9 @@ class PhysicsConfig:
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["parameter_names"] = list(PARAMETER_NAMES)
+        result["physics_formula_version"] = "rho-m2-center-v1"
         result["rho_formula"] = (
-            "a1/pi * (m*gamma) / ((s-m)^2 + (m*gamma)^2) + a2*s + a3"
+            "a1/pi * (m*gamma) / ((s-m^2)^2 + (m*gamma)^2) + a2*s + a3"
         )
         result["target_formula"] = f"u(s) = rho(s)/(s+{self.shift:g})^2"
         result["training_target"] = "data_scale * u(s)"

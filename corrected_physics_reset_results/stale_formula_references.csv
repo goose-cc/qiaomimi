@@ -1,0 +1,11 @@
+﻿file,line,text,active
+data_generate_gamma_curriculum.py,8,rho(s) = a1/pi * (m*gamma) / ((s-m)^2 + (m*gamma)^2) + a2*s + a3,0
+exp36_forward64.py,60,s_res = mass + width * np.tan(z),0
+exp37_core.py,75,s_res = mass + width * np.tan(z),0
+exp38_core.py,79,s_res = mass + width * np.tan(z),0
+train_mc_parameter_pool_transformer_loss.py,886,# Lorentz 共振峰采用 z=atan((s-m)/(m*gamma))，避免窄峰被固定 s 网格漏掉。,0
+train_mc_parameter_pool_transformer_loss.py,892,s_res = mass + width * torch.tan(z),0
+validate_mc_transformer_montage(2).py,704,/ ((s_row - m) ** 2 + width ** 2),0
+validate_mc_transformer_montage.py,704,/ ((s_row - m) ** 2 + width ** 2),0
+validate_mc_transformer_peak_ranked.py,556,/ ((s_row - m) ** 2 + width ** 2),0
+data_exp37_3p\exp38_core.py,79,s_res = mass + width * np.tan(z),0

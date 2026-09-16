@@ -1,0 +1,4 @@
+﻿boundary,status,reason
+a1=0,STRUCTURALLY_UNIDENTIFIABLE,"resonance term is exactly zero, so g is independent of m and gamma when a2/a3 are fixed"
+m=0,SINGULAR_OR_DEGENERATE_ENDPOINT,m*gamma=0 gives zero width; exact endpoint is not a regular Lorentzian state
+gamma=0,SINGULAR_ZERO_WIDTH_ENDPOINT,zero-width Lorentzian is not a regular finite-width function; numerical audit starts at original first positive step 0.01

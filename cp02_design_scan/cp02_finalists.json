@@ -1,0 +1,9 @@
+{
+  "finalists": [
+    "hybrid_ultranear_240",
+    "near_focus_geom_220",
+    "near_linear_200",
+    "baseline_linear_100"
+  ],
+  "recommended_by_continuous": "hybrid_ultranear_240"
+}

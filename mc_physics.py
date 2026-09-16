@@ -24,10 +24,11 @@ def rho_numpy(parameters: np.ndarray, s: np.ndarray | float) -> np.ndarray:
     s_array = np.asarray(s, dtype=np.float64)
     a1, a2, a3, mass, gamma = [p[:, i:i + 1] for i in range(5)]
     width = mass * gamma
+    center = mass * mass
     values = (
         (a1 / np.pi)
         * width
-        / ((s_array.reshape(1, -1) - mass) ** 2 + width**2)
+        / ((s_array.reshape(1, -1) - center) ** 2 + width**2)
         + a2 * s_array.reshape(1, -1)
         + a3
     )
@@ -41,10 +42,11 @@ def _rho_at_per_row(parameters: np.ndarray, s_values: np.ndarray) -> np.ndarray:
         raise ValueError("s_values must have one scalar for every parameter row")
     a1, a2, a3, mass, gamma = [p[:, i] for i in range(5)]
     width = mass * gamma
+    center = mass * mass
     return (
         (a1 / np.pi)
         * width
-        / ((s_values - mass) ** 2 + width**2)
+        / ((s_values - center) ** 2 + width**2)
         + a2 * s_values
         + a3
     )
@@ -59,7 +61,7 @@ def minimum_rho_on_interval_numpy(
     """
     Continuous-interval minimum for the specific rho model.
 
-    rho'(s) is always positive to the left of m. To the right of m it may
+    rho'(s) is always positive to the left of m^2. To the right of m^2 it may
     contain a local maximum followed by one local minimum. The function checks
     both interval endpoints and solves for that possible local minimum with a
     vectorized bisection. This avoids relying on a sparse non-negativity grid.
@@ -70,13 +72,14 @@ def minimum_rho_on_interval_numpy(
 
     a1, a2, _, mass, gamma = [p[:, i] for i in range(5)]
     width = mass * gamma
+    center = mass * mass
     left = _rho_at_per_row(p, np.full(len(p), s_min, dtype=np.float64))
     right = _rho_at_per_row(p, np.full(len(p), s_max, dtype=np.float64))
     minimum = np.minimum(left, right)
 
-    # d rho / ds = a2 - 2*c*x/(x^2+w^2)^2, x=s-m, c=a1*w/pi.
-    x_right = s_max - mass
-    x_left = np.maximum(s_min - mass, 0.0)
+    # d rho / ds = a2 - 2*c*x/(x^2+w^2)^2, x=s-m^2, c=a1*w/pi.
+    x_right = s_max - center
+    x_left = np.maximum(s_min - center, 0.0)
     x_peak = width / math.sqrt(3.0)
     lo_all = np.maximum(x_left, x_peak)
     c = a1 * width / np.pi
@@ -110,7 +113,7 @@ def minimum_rho_on_interval_numpy(
             negative = d_mid < 0.0
             lo[negative] = mid[negative]
             hi[~negative] = mid[~negative]
-        stationary_s = mass[ids] + 0.5 * (lo + hi)
+        stationary_s = center[ids] + 0.5 * (lo + hi)
         stationary_rho = _rho_at_per_row(p[ids], stationary_s)
         minimum[ids] = np.minimum(minimum[ids], stationary_rho)
 
@@ -178,25 +181,29 @@ def scaled_target_u_numpy(
     return (config.data_scale * u).astype(np.float32)
 
 
-def scaled_forward_observation_numpy(
+def scaled_forward_observation_at_q2_numpy(
     parameters: np.ndarray,
+    q2: np.ndarray,
     integration_points: int = 128,
     config: PhysicsConfig = DEFAULT_PHYSICS,
     q_block_size: int = 25,
+    output_dtype=np.float64,
 ) -> np.ndarray:
-    """
-    Compute scaled g_clean(q^2).
+    """Compute scaled g_clean on an arbitrary Euclidean q^2 design.
 
-    The smooth linear background is integrated on a fixed Gauss-Legendre grid.
-    The Lorentzian resonance uses z=atan((s-m)/(m*gamma)), which keeps very
-    narrow positive-width peaks visible to the quadrature.
+    This is the single NumPy source of truth for the corrected resonance center
+    m^2.  Observation-design experiments should call this function instead of
+    reimplementing the spectral formula.
     """
     p = _as_parameter_array(parameters)
-    batch = len(p)
-    _, q2 = output_grids_numpy(config)
+    q2 = np.asarray(q2, dtype=np.float64).reshape(-1)
+    if q2.size == 0 or not np.isfinite(q2).all():
+        raise ValueError("q2 must contain finite observation points")
+    if np.any(q2 >= config.s_min):
+        raise ValueError("q2 points must stay below the spectral integration interval")
     x, w = legendre_rule(int(integration_points))
 
-    # Smooth background: (a2*s+a3)/(s+400)^2/(s-q2).
+    # Smooth background: (a2*s+a3)/(s+shift)^2/(s-q2).
     s_mid = 0.5 * (config.s_max + config.s_min)
     s_half = 0.5 * (config.s_max - config.s_min)
     s_fixed = s_mid + s_half * x
@@ -210,16 +217,22 @@ def scaled_forward_observation_numpy(
     )
     result = background @ background_kernel
 
-    # Resonance after z substitution.
+    # Corrected Lorentzian resonance: center=m^2, width=m*gamma.
     a1 = p[:, 0:1]
     mass = p[:, 3:4]
-    width = (p[:, 3:4] * p[:, 4:5])
-    z0 = np.arctan((config.s_min - mass) / width)
-    z1 = np.arctan((config.s_max - mass) / width)
+    center = mass * mass
+    width = mass * p[:, 4:5]
+    if np.any(width <= 0.0):
+        raise ValueError(
+            "m and gamma must be strictly positive for numerical forward integration; "
+            "the nominal zero endpoints are singular/degenerate boundaries"
+        )
+    z0 = np.arctan((config.s_min - center) / width)
+    z1 = np.arctan((config.s_max - center) / width)
     z_mid = 0.5 * (z0 + z1)
     z_half = 0.5 * (z1 - z0)
     z = z_mid + z_half * x.reshape(1, -1)
-    s_res = mass + width * np.tan(z)
+    s_res = center + width * np.tan(z)
     coefficient = (
         (a1 / np.pi)
         * z_half
@@ -229,16 +242,33 @@ def scaled_forward_observation_numpy(
 
     for start in range(0, len(q2), int(q_block_size)):
         stop = min(start + int(q_block_size), len(q2))
-        denominator = (
-            s_res[:, :, None] - q2[None, None, start:stop]
-        )
+        denominator = s_res[:, :, None] - q2[None, None, start:stop]
         result[:, start:stop] += np.sum(
             coefficient[:, :, None] / denominator, axis=1
         )
 
     if not np.isfinite(result).all():
         raise FloatingPointError("non-finite forward observations were produced")
-    return (config.data_scale * result).astype(np.float32)
+    scaled = config.data_scale * result
+    return scaled.astype(output_dtype, copy=False)
+
+
+def scaled_forward_observation_numpy(
+    parameters: np.ndarray,
+    integration_points: int = 128,
+    config: PhysicsConfig = DEFAULT_PHYSICS,
+    q_block_size: int = 25,
+) -> np.ndarray:
+    """Compute scaled g_clean(q^2) on the configured observation grid."""
+    _, q2 = output_grids_numpy(config)
+    return scaled_forward_observation_at_q2_numpy(
+        parameters,
+        q2=q2,
+        integration_points=integration_points,
+        config=config,
+        q_block_size=q_block_size,
+        output_dtype=np.float32,
+    )
 
 
 def scaled_curves_numpy(
@@ -301,11 +331,12 @@ def scaled_curves_torch(
     mass = parameters[:, 3:4]
     gamma = parameters[:, 4:5]
     width = mass * gamma
+    center = mass * mass
 
     rho_output = (
         (a1 / math.pi)
         * width
-        / ((s_output[None, :] - mass) ** 2 + width**2)
+        / ((s_output[None, :] - center) ** 2 + width**2)
         + a2 * s_output[None, :]
         + a3
     )
@@ -328,12 +359,12 @@ def scaled_curves_torch(
     )
     result = background @ background_kernel
 
-    z0 = torch.atan((config.s_min - mass) / width)
-    z1 = torch.atan((config.s_max - mass) / width)
+    z0 = torch.atan((config.s_min - center) / width)
+    z1 = torch.atan((config.s_max - center) / width)
     z_mid = 0.5 * (z0 + z1)
     z_half = 0.5 * (z1 - z0)
     z = z_mid + z_half * x[None, :]
-    s_res = mass + width * torch.tan(z)
+    s_res = center + width * torch.tan(z)
     coefficient = (
         (a1 / math.pi)
         * z_half

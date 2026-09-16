@@ -1,0 +1,58 @@
+{
+  "experiment": "CP01 corrected-physics reset: 2P/3P narrow-vs-full audit",
+  "physics_formula_version": "rho-m2-center-v1",
+  "rho_formula": "a1/pi * (m*gamma) / ((s-m^2)^2 + (m*gamma)^2) + a2*s + a3",
+  "original_nominal_domain": {
+    "a1": [0.0, 0.2],
+    "a2": [0.0, 0.05],
+    "a3": [-0.05, 0.05],
+    "m": [0.0, 2.0],
+    "gamma": [0.0, 1.0]
+  },
+  "original_grid_increment": {
+    "a1": 0.001,
+    "a2": 0.001,
+    "a3": 0.001,
+    "m": 0.01,
+    "gamma": 0.01
+  },
+  "numerical_positive_floor": {
+    "m": 0.01,
+    "gamma": 0.01,
+    "reason": "m=0 or gamma=0 is a zero-width/singular boundary of the Lorentzian. The original first positive grid value is 0.01. The nominal domain is not redefined; exact-zero boundaries are audited separately and are not treated as recoverable continuous states."
+  },
+  "development_domain_legacy": {
+    "a1": [0.05, 0.2],
+    "m": [0.4, 1.2],
+    "gamma": [0.01, 1.0]
+  },
+  "staged_fixed_parameters": {
+    "a2": 0.025,
+    "a3": 0.0,
+    "m_for_2p": 0.8
+  },
+  "recovery_tolerances": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "reference_noise": 0.002,
+  "noise_levels": [0.0, 0.002],
+  "integration_points": 128,
+  "anchor_count": 96,
+  "continuous_alias_anchor_count": 32,
+  "candidate_seed": 2026091601,
+  "noise_seed": 2026091602,
+  "varpro_noise_repetitions": 4,
+  "continuous_maxiter": 70,
+  "continuous_multistart": 4,
+  "quick": {
+    "anchor_count": 20,
+    "continuous_alias_anchor_count": 6,
+    "varpro_noise_repetitions": 1,
+    "continuous_maxiter": 25,
+    "continuous_multistart": 2,
+    "m_grid_stride": 5,
+    "gamma_grid_stride": 5
+  }
+}

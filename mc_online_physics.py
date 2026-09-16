@@ -15,7 +15,7 @@ class OnlinePhysics(object):
 
     The implementation keeps the original physical problem unchanged. The
     smooth background uses fixed Gauss-Legendre quadrature. The Lorentzian term
-    uses z=atan((s-m)/(m*gamma)), preserving narrow peaks in the integral.
+    uses z=atan((s-m^2)/(m*gamma)), preserving narrow peaks in the integral.
     """
 
     def __init__(self, args: Any, device: torch.device):
@@ -86,17 +86,18 @@ class OnlinePhysics(object):
         mass = params_work[:, 3:4]
         gamma = params_work[:, 4:5]
         width = (mass * gamma).clamp_min(1e-10)
+        center = mass.square()
 
         background_values = (
             a2 * self.s_fixed.view(1, -1) + a3
         ) / (self.s_fixed.view(1, -1) + self.shift).square()
 
-        z0 = torch.atan((self.s_min - mass) / width)
-        z1 = torch.atan((self.s_max - mass) / width)
+        z0 = torch.atan((self.s_min - center) / width)
+        z1 = torch.atan((self.s_max - center) / width)
         z_mid = 0.5 * (z0 + z1)
         z_half = 0.5 * (z1 - z0)
         z = z_mid + z_half * self.gl_nodes.view(1, -1)
-        s_res = mass + width * torch.tan(z)
+        s_res = center + width * torch.tan(z)
         resonance_coefficient = (
             (a1 / math.pi)
             * z_half
