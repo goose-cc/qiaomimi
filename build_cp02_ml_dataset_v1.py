@@ -4,7 +4,9 @@
 
 Frozen scientific definition:
   * corrected m^2 resonance physics (rho-m2-center-v1)
-  * q^2 design = hybrid_ultranear_240
+  * immutable 3P domain: a1 in [0.05,0.20], m in [0.40,1.20], gamma in [0.01,1.00]
+  * fixed nuisance parameters: a2=0.025, a3=0
+  * q^2 design = immutable_linear_240_q2_m300_m6, spanning [-300,-6] GeV^2
   * identifiable iff D_M^continuous >= 1.5
 
 The large candidate pool is screened with a cheap coarse alias grid.  That grid
@@ -56,6 +58,13 @@ def read_csv(path: str | Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def assert_range_close(actual: Any, expected: Any, name: str, atol: float = 1e-12) -> None:
+    a = [float(actual[0]), float(actual[1])]
+    e = [float(expected[0]), float(expected[1])]
+    if len(actual) != 2 or len(expected) != 2 or any(abs(x - y) > atol for x, y in zip(a, e)):
+        raise RuntimeError(f"immutable range drift for {name}: expected {e}, got {a}")
+
+
 def append_csv_rows(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
     if not rows:
         return
@@ -99,9 +108,29 @@ def frozen_definition_check(physics_cfg: dict, dataset_cfg: dict) -> tuple[str, 
     for k in ("a1_abs", "m_abs", "gamma_factor"):
         if abs(float(tol[k]) - float(ftol[k])) > 1e-15:
             raise RuntimeError(f"recovery tolerance drift for {k}")
-    design_by_id(physics_cfg, design_id)  # uniqueness/existence check
+
+    # Hard immutable domain checks: all sampling and alias-search bounds come
+    # from physics_cfg[regular_numerical_domain], so fail early if it drifts.
+    expected_domain = frozen.get("parameter_domain", {})
+    domain = physics_cfg["regular_numerical_domain"]
+    for name in ("a1", "m", "gamma"):
+        assert_range_close(domain[name], expected_domain[name], name)
+    fixed_expected = frozen.get("fixed_parameters", {})
+    fixed = physics_cfg["fixed_parameters"]
+    for name in ("a2", "a3"):
+        if abs(float(fixed[name]) - float(fixed_expected[name])) > 1e-15:
+            raise RuntimeError(f"fixed parameter drift for {name}: expected {fixed_expected[name]}, got {fixed[name]}")
+
+    design = design_by_id(physics_cfg, design_id)  # uniqueness/existence check
+    q2_range = frozen.get("q2_range")
+    if q2_range is not None:
+        generated = make_q2(design)
+        if abs(float(generated.min()) - float(q2_range[0])) > 1e-12 or abs(float(generated.max()) - float(q2_range[1])) > 1e-12:
+            raise RuntimeError(
+                f"q2 range drift for {design_id}: expected {q2_range}, got [{float(generated.min())}, {float(generated.max())}]"
+            )
     if threshold != 1.5:
-        raise RuntimeError("CP02 ML v1 is frozen at D_M^continuous >= 1.5")
+        raise RuntimeError("CP02 ML dataset is frozen at D_M^continuous >= 1.5")
     return design_id, threshold
 
 
@@ -831,7 +860,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--physics-config", default="cp02_corrected_3p_config.json")
     ap.add_argument("--dataset-config", default="cp02_ml_dataset_v1_config.json")
-    ap.add_argument("--output-dir", default="data_cp02_ml_v1")
+    ap.add_argument("--output-dir", default="data_cp02_ml_immutable_v2")
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--no-verified-seed", action="store_true")
@@ -846,23 +875,35 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     generated_q2 = make_q2(design_by_id(physics_cfg, design_id))
-    prior_q2_path = Path(dataset_cfg.get("verified_seed", {}).get("q2_npy", ""))
-    if prior_q2_path.exists() and not args.quick:
+    vcfg = dataset_cfg.get("verified_seed", {})
+    prior_q2_path = Path(vcfg.get("q2_npy", ""))
+    allow_saved_q2 = bool(dataset_cfg["frozen_definition"].get("allow_saved_q2_artifact", True))
+    use_prior_q2 = (
+        allow_saved_q2
+        and bool(vcfg.get("use_if_present", True))
+        and str(prior_q2_path) not in ("", ".")
+        and prior_q2_path.exists()
+        and not args.quick
+    )
+    if use_prior_q2:
         q2 = np.load(prior_q2_path).astype(np.float64)
         q2_source = str(prior_q2_path)
         if q2.ndim != 1 or len(q2) < 8 or not np.isfinite(q2).all() or np.any(q2 >= 0.0):
             raise RuntimeError("saved frozen q2 array is invalid")
         if q2.shape != generated_q2.shape or not np.allclose(q2, generated_q2, rtol=0.0, atol=1e-12):
-            print("WARNING: saved CP02 q2 differs from the current design generator; using the saved q2 because the threshold was calibrated on that artifact.")
+            raise RuntimeError(
+                "saved q2 artifact does not match the immutable generated q2. "
+                "Do not reuse the old hybrid q2 artifact for the [-300,-6] build."
+            )
     else:
         q2 = generated_q2
-        q2_source = "cp02_observation.make_q2(current config)"
+        q2_source = "cp02_observation.make_q2(current immutable config)"
     np.save(out / "q2.npy", q2.astype(np.float64))
     nominal_points = int(dataset_cfg["frozen_definition"].get("nominal_design_points", len(q2)))
     if len(q2) != nominal_points:
         print(
-            f"NOTE: design label is nominally {nominal_points} points, but the frozen unique q2 array has {len(q2)} points. "
-            "This builder preserves the exact calibrated q2 instead of adding/removing a point after threshold calibration."
+            f"NOTE: design label is nominally {nominal_points} points, but the generated unique q2 array has {len(q2)} points. "
+            "This should not happen for immutable_linear_240_q2_m300_m6; inspect q2 generation before training."
         )
 
     print("[1/7] Load verified seeds and generate a larger full-domain candidate pool")
@@ -1133,7 +1174,7 @@ def main() -> None:
             "formula": physics_cfg["formula"],
         },
         "candidate_sampling": {
-            "domain": "cp02 regular_numerical_domain (empirical identifiable ranges are coverage references, not hard bounds)",
+            "domain": "immutable regular_numerical_domain; all candidates and alias searches constrained to frozen a1/m/gamma bounds",
             "regular_numerical_domain": physics_cfg["regular_numerical_domain"],
             "candidate_count": int(len(candidate_params)), "candidate_seed": int(dataset_cfg["candidate_seed"]),
             "coarse_grid": {"m_points": settings["coarse_m_points"], "log_gamma_points": settings["coarse_g_points"]},

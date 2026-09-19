@@ -1,6 +1,6 @@
 param(
     [int]$Workers = 4,
-    [string]$OutputDir = "data_cp02_ml_v1",
+    [string]$OutputDir = "data_cp02_ml_immutable_v2",
     [switch]$Quick,
     [switch]$NoVerifiedSeed
 )

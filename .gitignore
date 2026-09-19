@@ -64,7 +64,9 @@ model/v2_exp2_output1000_160m/
 
 # CP02 formal ML dataset outputs
 data_cp02_ml_v1*/
+data_cp02_ml_immutable_v2*/
 
-data_cp02_ml_v1/
-data_cp02_ml_v1_quick/
-*.npz
+data_cp02_ml_hybrid_domain_v2/
+data_cp02_ml_hybrid_domain_v2_quick/
+data_cp02_ml_immutable_v2/
+data_cp02_ml_immutable_v2_quick/

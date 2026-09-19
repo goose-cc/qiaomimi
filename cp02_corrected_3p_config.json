@@ -1,35 +1,35 @@
 {
-  "experiment": "CP02 corrected-physics 3P full-domain g redesign + identifiability + physical ceiling",
+  "experiment": "CP02 immutable-domain 3P ML dataset build: corrected m^2 physics, a1/m/gamma restricted, original hybrid_ultranear_240 q2 design",
   "physics_formula_version": "rho-m2-center-v1",
   "formula": "a1/pi * (m*gamma) / ((s-m^2)^2 + (m*gamma)^2) + a2*s + a3",
   "nominal_full_domain": {
     "a1": [
-      0.0,
+      0.05,
       0.2
     ],
     "m": [
-      0.0,
-      2.0
+      0.4,
+      1.2
     ],
     "gamma": [
-      0.0,
+      0.01,
       1.0
     ]
   },
   "regular_numerical_domain": {
     "a1": [
-      0.0,
+      0.05,
       0.2
     ],
     "m": [
-      0.01,
-      2.0
+      0.4,
+      1.2
     ],
     "gamma": [
       0.01,
       1.0
     ],
-    "note": "m=0 and gamma=0 are singular/degenerate endpoints. a1=0 is retained in the nominal domain but is structurally unidentifiable for m/gamma and is handled by the identifiability filter."
+    "note": "Immutable ML domain. a2=0.025 and a3=0 are fixed nuisance parameters; all sampling, alias search, coverage and split logic must stay within these a1/m/gamma bounds."
   },
   "fixed_parameters": {
     "a2": 0.025,
@@ -43,10 +43,17 @@
   "reference_noise": 0.002,
   "integration_points": 128,
   "original_q2_domain": [
-    -100.0,
-    -6.0
+    -150.0,
+    -0.05
   ],
   "observation_designs": [
+    {
+      "id": "immutable_linear_240_q2_m300_m6",
+      "kind": "linear",
+      "q2_min": -300.0,
+      "q2_max": -6.0,
+      "points": 240
+    },
     {
       "id": "baseline_linear_100",
       "kind": "linear",
@@ -140,12 +147,12 @@
     "anchor_count": 420,
     "anchor_seed": 20260916021,
     "a1_strata": [
-      0.0,
-      0.01,
-      0.025,
       0.05,
+      0.075,
       0.1,
+      0.125,
       0.15,
+      0.175,
       0.2
     ],
     "profile_m_points": 81,

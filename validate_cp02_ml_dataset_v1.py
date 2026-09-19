@@ -27,7 +27,7 @@ def add(checks: list[dict[str, Any]], name: str, ok: bool, value: Any = "") -> N
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--physics-config", default="cp02_corrected_3p_config.json")
-    ap.add_argument("--dataset-dir", default="data_cp02_ml_v1")
+    ap.add_argument("--dataset-dir", default="data_cp02_ml_immutable_v2")
     ap.add_argument("--forward-batch-size", type=int, default=384)
     args = ap.parse_args()
 
@@ -53,6 +53,8 @@ def main() -> None:
     design = make_q2(design_by_id(cfg, frozen["design_id"]))
     add(checks, "formula_version_frozen", cfg["physics_formula_version"] == frozen["physics_formula_version"], cfg["physics_formula_version"])
     add(checks, "q2_nominal_design_label_240", int(frozen.get("q2_nominal_design_points", frozen.get("nominal_design_points", 240))) == 240, frozen.get("q2_nominal_design_points", frozen.get("nominal_design_points", 240)))
+    expected_q2_range = frozen.get("q2_range", [-300.0, -6.0])
+    add(checks, "q2_range_immutable_m300_m6", abs(float(q2.min()) - float(expected_q2_range[0])) < 1e-12 and abs(float(q2.max()) - float(expected_q2_range[1])) < 1e-12, {"min": float(q2.min()), "max": float(q2.max()), "expected": expected_q2_range})
     q2_hash = __import__("hashlib").sha256(np.asarray(q2, dtype="<f8").tobytes()).hexdigest()
     add(checks, "q2_hash_matches_metadata", q2_hash == frozen.get("q2_sha256", q2_hash), q2_hash)
     # Current code deduplicates the shared -20 endpoint, so hybrid_ultranear_240
@@ -79,6 +81,13 @@ def main() -> None:
     add(checks, "numeric_state_id_unique", len(np.unique(sids)) == n, n)
     add(checks, "all_continuous_margins_ge_1p5", bool(np.all(margin >= threshold - 1e-12)), float(np.min(margin)))
     add(checks, "physical_q2_matches_root", np.array_equal(q2_in, q2), len(q2_in))
+
+    expected_domain = frozen.get("parameter_domain", {"a1": [0.05, 0.20], "m": [0.40, 1.20], "gamma": [0.01, 1.00]})
+    fixed_expected = frozen.get("fixed_parameters", {"a2": 0.025, "a3": 0.0})
+    add(checks, "params_a1_inside_immutable_domain", bool(np.all((params[:, 0] >= float(expected_domain["a1"][0]) - 1e-12) & (params[:, 0] <= float(expected_domain["a1"][1]) + 1e-12))), [float(params[:, 0].min()), float(params[:, 0].max())])
+    add(checks, "params_m_inside_immutable_domain", bool(np.all((params[:, 3] >= float(expected_domain["m"][0]) - 1e-12) & (params[:, 3] <= float(expected_domain["m"][1]) + 1e-12))), [float(params[:, 3].min()), float(params[:, 3].max())])
+    add(checks, "params_gamma_inside_immutable_domain", bool(np.all((params[:, 4] >= float(expected_domain["gamma"][0]) - 1e-12) & (params[:, 4] <= float(expected_domain["gamma"][1]) + 1e-12))), [float(params[:, 4].min()), float(params[:, 4].max())])
+    add(checks, "params_a2_a3_fixed", bool(np.allclose(params[:, 1], float(fixed_expected["a2"]), rtol=0.0, atol=1e-12) and np.allclose(params[:, 2], float(fixed_expected["a3"]), rtol=0.0, atol=1e-12)), {"a2_unique": np.unique(params[:, 1]).tolist()[:5], "a3_unique": np.unique(params[:, 2]).tolist()[:5]})
 
     split_sets = {name: set(pids[split == name].tolist()) for name in ("train", "val", "test")}
     disjoint = not (split_sets["train"] & split_sets["val"] or split_sets["train"] & split_sets["test"] or split_sets["val"] & split_sets["test"])

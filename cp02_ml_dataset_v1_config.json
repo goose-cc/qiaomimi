@@ -1,21 +1,44 @@
 {
-  "dataset_id": "cp02_ml_physical_states_v1",
+  "dataset_id": "cp02_ml_physical_states_hybrid_q2_immutable_domain_v2",
   "frozen_definition": {
     "physics_formula_version": "rho-m2-center-v1",
     "design_id": "hybrid_ultranear_240",
     "continuous_threshold_mahalanobis": 1.5,
     "reference_noise": 0.002,
     "nominal_design_points": 240,
-    "q2_note": "The current cp02_observation.make_q2 deduplicates the shared -20 endpoint, so the frozen design label says 240 while the generated unique grid has 239 points. Use the exact frozen q2 array; do not add a duplicate point after threshold calibration.",
+    "q2_note": "Use the original calibrated hybrid_ultranear_240 q2 design. The immutable a1/m/gamma domain is retained. Do not use the failed linear [-300,-6] q2 design for training.",
     "recovery_tolerances": {
       "a1_abs": 0.005,
       "m_abs": 0.03,
       "gamma_factor": 1.2
-    }
+    },
+    "q2_range": [
+      -150.0,
+      -0.05
+    ],
+    "parameter_domain": {
+      "a1": [
+        0.05,
+        0.2
+      ],
+      "m": [
+        0.4,
+        1.2
+      ],
+      "gamma": [
+        0.01,
+        1.0
+      ]
+    },
+    "fixed_parameters": {
+      "a2": 0.025,
+      "a3": 0.0
+    },
+    "allow_saved_q2_artifact": false
   },
   "target_physical_states": 12000,
   "candidate_count": 65536,
-  "candidate_seed": 20260918011,
+  "candidate_seed": 20260919031,
   "candidate_forward_batch_size": 384,
   "coarse_screen": {
     "m_points": 31,
@@ -27,29 +50,29 @@
     "checkpoint_batch_size": 32
   },
   "verified_seed": {
-    "use_if_present": true,
+    "use_if_present": false,
     "refined_prebank_csv": "cp02_identifiable_bank/cp02_refined_prebank.csv",
-    "q2_npy": "cp02_identifiable_bank/q2.npy"
+    "q2_npy": "cp02_identifiable_bank/q2.npy",
+    "note": "Disabled for immutable q2/domain build; old prebank was calibrated under a different observation design/domain."
   },
   "coverage_bins": {
     "a1": [
-      0.0,
-      0.01,
-      0.025,
       0.05,
+      0.075,
       0.1,
+      0.125,
       0.15,
+      0.175,
       0.2
     ],
     "m": [
-      0.01,
-      0.2942857142857143,
-      0.5785714285714286,
-      0.862857142857143,
-      1.1471428571428572,
-      1.4314285714285715,
-      1.715714285714286,
-      2.0
+      0.4,
+      0.5333333333333333,
+      0.6666666666666667,
+      0.8,
+      0.9333333333333333,
+      1.0666666666666667,
+      1.2
     ],
     "gamma": [
       0.01,
@@ -66,7 +89,7 @@
     "train_fraction": 0.8,
     "val_fraction": 0.1,
     "test_fraction": 0.1,
-    "seed": 20260918021
+    "seed": 20260919051
   },
   "noise": {
     "train_level": 0.002,
@@ -79,12 +102,12 @@
       0.01
     ],
     "test_replicas": 1,
-    "seed": 20260918031
+    "seed": 20260919041
   },
   "continuous_audit": {
     "random_count": 192,
     "boundary_count": 64,
-    "seed": 20260918041,
+    "seed": 20260919061,
     "m_points": 121,
     "log_gamma_points": 141,
     "top_regions": 3,
