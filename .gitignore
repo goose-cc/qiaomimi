@@ -61,3 +61,10 @@ model/v2_exp2_output1000_smoke/
 model/v2_exp2_output1000_160m/
 
 !3P_training_release/**/*.npz
+
+# CP02 formal ML dataset outputs
+data_cp02_ml_v1*/
+
+data_cp02_ml_v1/
+data_cp02_ml_v1_quick/
+*.npz
