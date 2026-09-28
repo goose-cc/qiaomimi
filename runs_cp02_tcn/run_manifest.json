@@ -1,0 +1,37 @@
+{
+  "data_dir": "data_cp02_ml_hybrid_domain_v2",
+  "train_samples": 28800,
+  "val_samples": 1200,
+  "test_samples_per_noise": 1200,
+  "input_length": 239,
+  "coordinate_mode": "q2_linear_plus_logabs",
+  "q2_present": true,
+  "q2_points": 239,
+  "targets": [
+    "a1",
+    "m",
+    "log_gamma"
+  ],
+  "recovery": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "seeds": [
+    20260920
+  ],
+  "channels": [
+    64,
+    96,
+    128,
+    160
+  ],
+  "kernel_size": 5,
+  "dropout": 0.08,
+  "batch_size": 512,
+  "amp": true,
+  "tf32": true,
+  "cudnn_benchmark": true,
+  "deterministic": false,
+  "gpu_cache": true
+}

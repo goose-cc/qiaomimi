@@ -1,0 +1,31 @@
+{
+  "version": "cp02-tcn-amp-preserve-v3",
+  "data_dir": "data_cp02_ml_hybrid_domain_v2",
+  "input_length": 239,
+  "coordinate_mode": "q2_linear_plus_logabs",
+  "architecture_changes": [
+    "removed GroupNorm",
+    "positional adaptive avg/max pooling",
+    "direct observation shortcut",
+    "global trace amplitude statistics"
+  ],
+  "shortcut_enabled": true,
+  "pool_bins": 12,
+  "channels": [
+    64,
+    96,
+    128,
+    160
+  ],
+  "dropout": 0.03,
+  "weight_decay": 3e-05,
+  "checkpoint_rule": "lexicographic max(min val recovery, joint val recovery, -val loss)",
+  "recovery": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "seeds": [
+    20260920
+  ]
+}
