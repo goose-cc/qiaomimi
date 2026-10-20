@@ -1,0 +1,168 @@
+{
+  "kind": "FIVEP_V2_HYBRID_FORMAL_DATASET",
+  "stage": "5P",
+  "names": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "gamma"
+  ],
+  "parameter_ranges": {
+    "a1": [
+      0.05,
+      0.2
+    ],
+    "a2": [
+      0.0,
+      0.05
+    ],
+    "a3": [
+      -0.05,
+      0.05
+    ],
+    "m": [
+      0.4,
+      1.2
+    ],
+    "gamma": [
+      0.01,
+      1.0
+    ]
+  },
+  "recovery_tolerances": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "reference_noise": 0.002,
+  "noise_rule": "sigma=0.002*RMS(g_clean); independent N(0,1) per noise replica",
+  "q2_design": "hybrid_ultranear_240 (historical file actual 239 distinct observations)",
+  "q2_points": 239,
+  "q2_domain": [
+    -150.0,
+    -0.05
+  ],
+  "q2_source_file_sha256": "2624d6cf24873a0e4c60f7ba19e2239a0a5ec961c04badf8056e1f1568dc653d",
+  "q2_values_sha256": "470c3ad4659aa5529467efe8f935f4dd135dfa52dd26d3060f887c1cc9120be6",
+  "q2_locked_to_historical": true,
+  "physics_integration_points": 128,
+  "source_sha256": {
+    "mc_physics.py": "b0bd30ac3ea5cd9abc5f5a2cb88869566d13259f02d074086f9bec5a3b14885f",
+    "mc_pool_config.py": "4aa6ce3e521198791d14bd2f076c2cca3dc7e4b53c86b3db26be33b6a98bd45d"
+  },
+  "split_counts": {
+    "train": 9600,
+    "val": 1200,
+    "test": 1200
+  },
+  "sample_counts": {
+    "train": 28800,
+    "val": 1200,
+    "test": 1200
+  },
+  "train_replicas": 3,
+  "seed": 20261019,
+  "physical_screen": "rho(s)>=0 continuously on s in [.1764,6]; original bounds",
+  "alias_screening": {
+    "train_candidate_pool_size": 65536,
+    "train_prescreen_disjoint_D_below_6": 539,
+    "train_endpoint_repair": {
+      "extra_endpoint_states": 6,
+      "missing_endpoints_repaired": [
+        {
+          "parameter": "a3",
+          "value": 0.05,
+          "extra_valid_states": 3
+        },
+        {
+          "parameter": "gamma",
+          "value": 0.01,
+          "extra_valid_states": 3
+        }
+      ],
+      "reference_pool_size": 65536,
+      "screening_method": "projected 96-neighbor shortlist, full-q2 D and disjoint-window filter",
+      "screening_is_exhaustive": false
+    },
+    "rejected_total_after_selected_probe": 539,
+    "only_disjoint_recovery_windows_under_D6_removed": true,
+    "global_pairwise_D6_required": false,
+    "nearest_probe": "SVD shortlist 64, exact full-q2 distance, not exhaustive",
+    "local_train_probe_iterations": [
+      {
+        "iteration": 0,
+        "detected_selected_conflict_indices": 0,
+        "diagnostic": {
+          "pairs_probed_directed": 614400,
+          "disjoint_under_6_directed": 0,
+          "close_compatible_under_6_directed": 4,
+          "minimum_probed_train_D_g": 5.786475927948084,
+          "search_exhaustive": false,
+          "neighbors": 64,
+          "projection_dim": 16
+        }
+      }
+    ],
+    "candidate_audit_sha256": "305597e37ec4aeb480ee5f0d9f7bc6c8c6ace1ded27bc31bf16231bf276fd916",
+    "probe_does_not_guarantee_continuous_space_identifiability": true
+  },
+  "coverage": {
+    "bin_count": 10,
+    "minimum_fraction_per_bin": 0.02,
+    "gamma_log_bins": true,
+    "a1_a2_a3_m_linear_bins": true
+  },
+  "blind_split": {
+    "selection_order": [
+      "train",
+      "val",
+      "test"
+    ],
+    "train_selected_before_holdouts_exist": true,
+    "holdout_selection_uses_g": false,
+    "holdout_candidate_seeds": {
+      "val": 20361022,
+      "test": 20461022
+    },
+    "no_state_overlap": true
+  },
+  "holdout_sampling": {
+    "val": {
+      "seed": 20361022,
+      "raw_candidates": 16384,
+      "physical_candidates": 11370,
+      "endpoint_variants": 10,
+      "chosen_unique": 1200,
+      "selection_uses_g": false
+    },
+    "test": {
+      "seed": 20461022,
+      "raw_candidates": 16384,
+      "physical_candidates": 11369,
+      "endpoint_variants": 10,
+      "chosen_unique": 1200,
+      "selection_uses_g": false
+    }
+  },
+  "nested_train_subsets": {
+    "1000": {
+      "state_indices_file": "train_state_indices_1000.npy",
+      "noise_row_expansion": "repeat each physical-state index 3 times"
+    },
+    "2000": {
+      "state_indices_file": "train_state_indices_2000.npy",
+      "noise_row_expansion": "repeat each physical-state index 3 times"
+    },
+    "5000": {
+      "state_indices_file": "train_state_indices_5000.npy",
+      "noise_row_expansion": "repeat each physical-state index 3 times"
+    },
+    "9600": {
+      "state_indices_file": "train_state_indices_9600.npy",
+      "noise_row_expansion": "repeat each physical-state index 3 times"
+    }
+  },
+  "scientific_status": "PHYSICS_AND_SPLIT_INTEGRITY_ONLY__RECOVERY_NOT_CERTIFIED",
+  "caveat": "Train-only nearest-neighbor alias screen is nonexhaustive; near-alias can exist outside shortlist."
+}
