@@ -1,0 +1,79 @@
+{
+  "experiment": "fivep-blind-v1-training-v2-diagnostic",
+  "purpose": "fix V1 under-training and distinguish fit-capacity from sparse-state generalization",
+  "test_access": "NONE - Train/Val only",
+  "models": [
+    "tcn"
+  ],
+  "seeds": [
+    20260920
+  ],
+  "epochs": 2,
+  "batch_size": 96,
+  "eval_every": 1,
+  "early_stop": false,
+  "precision": "fp32",
+  "tf32": false,
+  "scheduler": "none",
+  "target_names": [
+    "a1",
+    "a2",
+    "a3",
+    "m",
+    "log_gamma"
+  ],
+  "target_transform": [
+    "identity",
+    "identity",
+    "identity",
+    "identity",
+    "natural_log"
+  ],
+  "target_weights": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "recovery": {
+    "a1_abs": 0.005,
+    "m_abs": 0.03,
+    "gamma_factor": 1.2
+  },
+  "checkpoint_rules": [
+    "best_val_loss",
+    "best_val_score",
+    "best_val_recovery",
+    "best_train_recovery",
+    "last"
+  ],
+  "tcn": {
+    "channels": [
+      64,
+      96,
+      128,
+      160
+    ],
+    "kernel": 5,
+    "pool_bins": 12,
+    "dropout": 0.0,
+    "lr": 0.0005,
+    "weight_decay": 0.0
+  },
+  "mlp": {
+    "hidden": [
+      512,
+      256,
+      128
+    ],
+    "dropout": 0.0,
+    "lr": 0.0005,
+    "weight_decay": 0.0
+  },
+  "backend": {
+    "deterministic": false,
+    "cudnn_benchmark": false,
+    "tf32": false
+  }
+}
